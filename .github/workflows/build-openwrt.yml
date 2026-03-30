@@ -1,16 +1,16 @@
-name: Build OpenWrt Official Latest (RAX3000M eMMC)
+name: Build OpenWrt 25.12 Stable (RAX3000M eMMC)
 
 on:
   repository_dispatch:
   workflow_dispatch:
 
-# 赋予 GitHub Actions 写入 Releases 的权限
 permissions:
   contents: write
 
 env:
+  # 回到官方源码，锁定最新发布的 25.12 稳定分支
   REPO_URL: https://github.com/openwrt/openwrt.git
-  REPO_BRANCH: master
+  REPO_BRANCH: openwrt-25.12
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
@@ -31,7 +31,6 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        # 修复 Ubuntu 24.04 源误删问题，替换 python3-distutils 为 setuptools
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
         sudo docker image prune --all --force
         sudo apt-get update
@@ -79,35 +78,28 @@ jobs:
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: 提取核心固件与软件列表 (保留所有刷机格式)
+    - name: 提取核心固件与软件列表
       id: organize
       if: steps.compile.outputs.status == 'success'
       run: |
         cd openwrt/bin/targets/*/*
         rm -rf packages
         
-        # 【修改点】：彻底放宽限制，保留所有的 .itb（救砖/升级包）、.bin（如 sysupgrade.bin 或 factory.bin）、.img 及 .gz 镜像，以及 .manifest
+        # 提取所有的 .bin, .itb, .img.gz 固件以及清单文件
         find . -maxdepth 1 -type f ! -name "*.itb" ! -name "*.bin" ! -name "*.img*" ! -name "*.gz" ! -name "*.manifest" -exec rm -f {} +
         
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
         
-    - name: 上传固件到 Artifacts (备用)
-      uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_FIRMWARE == 'true'
-      with:
-        name: OpenWrt_Firmware_RAX3000M_eMMC
-        path: ${{ env.FIRMWARE }}
-
     - name: 生成 Release 标签
       id: tag
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
-        echo "🚀 RAX3000M eMMC 专属纯净版编译完成" >> release.txt
-        echo "📦 已包含: OpenClash, AdGuardHome, Docker, Filebrowser, 完整USB/5G驱动" >> release.txt
-        echo "📄 详细安装的软件列表请查看下方下载处的 .manifest 文件" >> release.txt
+        echo "🚀 RAX3000M eMMC 专属 OpenWrt 25.12 官方稳定版编译完成" >> release.txt
+        echo "📦 已包含: OpenClash, AdGuardHome, Docker, 完整USB/5G驱动" >> release.txt
+        echo "⚠️ 注意：采用官方最新 FIT 格式，须经由 SSH 强制刷入 eMMC" >> release.txt
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 发布至 Releases
