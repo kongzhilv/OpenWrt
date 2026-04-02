@@ -8,9 +8,10 @@ permissions:
   contents: write
 
 env:
-  # 回到官方源码，锁定最新发布的 25.12 稳定分支
-  REPO_URL: https://github.com/openwrt/openwrt.git
-  REPO_BRANCH: openwrt-25.12
+  # 换成真正的 ImmortalWrt 仓库，彻底告别 kenzo 插件兼容性问题
+  REPO_URL: https://github.com/immortalwrt/immortalwrt.git
+  # 注意：如果 ImmortalWrt 官方有 openwrt-25.12 分支，保持不变；如果没有，建议改为 master 或 openwrt-24.10
+  REPO_BRANCH: openwrt-25.12  
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
