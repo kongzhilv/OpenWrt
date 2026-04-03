@@ -19,3 +19,6 @@ git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon.git package/lu
 
 # 4. 强制将默认主题由 bootstrap 替换为 argon
 sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
+
+# 5. 修复 Rust 在 Github Actions 环境下的编译报错
+sed -i 's/download-ci-llvm = true/download-ci-llvm = false/g' feeds/packages/lang/rust/Makefile
