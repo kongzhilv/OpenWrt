@@ -1,4 +1,4 @@
-name: Build OpenWrt 25.12 Stable (RAX3000M eMMC)
+name: Build OpenWrt 25.12.1 (RAX3000M eMMC)
 
 on:
   repository_dispatch:
@@ -8,9 +8,8 @@ permissions:
   contents: write
 
 env:
-  # 换成真正的 ImmortalWrt 仓库，彻底告别 kenzo 插件兼容性问题
   REPO_URL: https://github.com/openwrt/openwrt.git
-  REPO_BRANCH: openwrt-25.12  
+  REPO_BRANCH: openwrt-25.12
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
@@ -85,7 +84,6 @@ jobs:
         cd openwrt/bin/targets/*/*
         rm -rf packages
         
-        # 提取所有的 .bin, .itb, .img.gz 固件以及清单文件
         find . -maxdepth 1 -type f ! -name "*.itb" ! -name "*.bin" ! -name "*.img*" ! -name "*.gz" ! -name "*.manifest" -exec rm -f {} +
         
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
@@ -97,9 +95,9 @@ jobs:
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
-        echo "🚀 RAX3000M eMMC 专属 OpenWrt 25.12 官方稳定版编译完成" >> release.txt
-        echo "📦 已包含: OpenClash, AdGuardHome, Docker, 完整USB/5G驱动" >> release.txt
-        echo "⚠️ 注意：采用官方最新 FIT 格式，须经由 SSH 强制刷入 eMMC" >> release.txt
+        echo "🚀 RAX3000M eMMC 专属 OpenWrt 25.12.1 终极纯净版编译完成" >> release.txt
+        echo "📦 已修复 Wi-Fi，集成 Argon 主题、全中文补丁及 OpenClash" >> release.txt
+        echo "⚠️ 注意：此为官方 FIT 格式，须经由 SSH 强制刷入 eMMC" >> release.txt
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 发布至 Releases
