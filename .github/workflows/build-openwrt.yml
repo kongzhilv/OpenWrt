@@ -73,6 +73,9 @@ jobs:
 
     - name: 编译固件
       id: compile
+      env:
+        GITHUB_ACTIONS: false
+        CI: false  # 新增：把通用的 CI 标识也给屏蔽掉
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile"
