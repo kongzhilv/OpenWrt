@@ -4,11 +4,15 @@
 # 1. 修改默认后台 IP 为 192.168.2.1
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate
 
-# 2. 物理删除 kenzok8/small 源中引发“死循环”报错的无用插件，防止编译失败
-rm -rf feeds/small/luci-app-homeproxy
-rm -rf feeds/small/luci-app-momo
-rm -rf feeds/kenzo/luci-app-homeproxy
-rm -rf feeds/kenzo/luci-app-momo
+# 2. 使用通配符，大范围物理删除 kenzok8/small 源中引发“死循环”报错的无用插件
+rm -rf feeds/small/*homeproxy*
+rm -rf feeds/small/*momo*
+rm -rf feeds/small/*fchomo*
+rm -rf feeds/small/*nikki*
+rm -rf feeds/kenzo/*homeproxy*
+rm -rf feeds/kenzo/*momo*
+rm -rf feeds/kenzo/*fchomo*
+rm -rf feeds/kenzo/*nikki*
 
 # 3. 单独拉取最新的 Argon 主题源码
 git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon.git package/luci-theme-argon
