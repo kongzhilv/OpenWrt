@@ -1,4 +1,4 @@
-name: Build OpenWrt 25.12.1 (RAX3000M eMMC)
+name: Build OpenWrt 25.12.1 Official (RAX3000M eMMC)
 
 on:
   repository_dispatch:
@@ -9,7 +9,8 @@ permissions:
 
 env:
   REPO_URL: https://github.com/openwrt/openwrt.git
-  REPO_BRANCH: openwrt-25.12
+  # 精准锁定拉取官方真正的 v25.12.1 正式版源码
+  REPO_BRANCH: v25.12.1
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
@@ -38,6 +39,7 @@ jobs:
 
     - name: 克隆 OpenWrt 官方源码
       run: |
+        # 这里的 -b 会精确 checkout 到 v25.12.1 这个 tag
         git clone $REPO_URL -b $REPO_BRANCH openwrt
 
     - name: 加载自定义软件源 (DIY-part1)
@@ -95,7 +97,7 @@ jobs:
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
-        echo "🚀 RAX3000M eMMC 专属 OpenWrt 25.12.1 终极纯净版编译完成" >> release.txt
+        echo "🚀 RAX3000M eMMC 专属 OpenWrt v25.12.1 正式版编译完成" >> release.txt
         echo "📦 已修复 Wi-Fi，集成 Argon 主题、全中文补丁及 OpenClash" >> release.txt
         echo "⚠️ 注意：此为官方 FIT 格式，须经由 SSH 强制刷入 eMMC" >> release.txt
         echo "status=success" >> $GITHUB_OUTPUT
