@@ -21,7 +21,8 @@ git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon.git package/lu
 sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
 
 # 5. 暴力修复 Rust 编译交叉冲突
-# 直接删除原始 Makefile 中关于 download-ci-llvm 的配置行
 sed -i '/download-ci-llvm/d' feeds/packages/lang/rust/Makefile
-# 强制在 Makefile 写入配置的地方加上 download-ci-llvm = false
 sed -i '/\[llvm\]/a \download-ci-llvm = false' feeds/packages/lang/rust/Makefile
+
+# 6. 【新增】强制修改系统默认语言为简体中文 (防止部分设备开机默认切回英文)
+sed -i 's/auto/zh_Hans/g' feeds/luci/modules/luci-base/root/etc/config/luci
