@@ -27,10 +27,10 @@ sed -i '/\[llvm\]/a \download-ci-llvm = false' feeds/packages/lang/rust/Makefile
 # 6. 强制修改系统默认语言为简体中文
 sed -i 's/auto/zh_Hans/g' feeds/luci/modules/luci-base/root/etc/config/luci
 
-# 7. 【核心新增】强行注入 EEPROM，修复官方源码 RAX3000M 没有 WiFi 的致命 BUG
-# 创建自定义系统级的固件存放目录
+# 6. 修复 eMMC 版本 EEPROM 读取失败，注入高功率 NX30 Pro 的 EEPROM 文件
 mkdir -p package/base-files/files/lib/firmware/mediatek
-# 从知名仓库拉取完美提取的 MT7981 双频 EEPROM 校准文件，直接塞进系统深层
-curl -sLo package/base-files/files/lib/firmware/mediatek/mt7981_eeprom_mt7976_dual.bin https://raw.githubusercontent.com/coolsnowwolf/lede/master/package/lean/mt/mt76/files/lib/firmware/mediatek/mt7981_eeprom_mt7976_dual.bin
-# 复制一份作为备用名，防止官方底层内核寻找旧版命名
-cp package/base-files/files/lib/firmware/mediatek/mt7981_eeprom_mt7976_dual.bin package/base-files/files/lib/firmware/mediatek/mt7981_eeprom_mt7976.bin
+
+# 注意：这里使用的是 raw.githubusercontent.com 的真实物理文件下载链接
+# 并且下载后强制重命名为驱动所需要的 mt7981_eeprom_mt7976_dbdc.bin
+curl -sLo package/base-files/files/lib/firmware/mediatek/mt7981_eeprom_mt7976_dbdc.bin \
+    "https://raw.githubusercontent.com/KawaiiHachimi/Actions-rax3000m-emmc/main/eeprom/nx30pro_eeprom.bin"
