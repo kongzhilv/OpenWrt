@@ -41,22 +41,15 @@ echo "Patching CMCC RAX3000M to map native MAC addresses..."
 DTS_FILE=$(find target/linux/mediatek -name "mt7981b-cmcc-rax3000m.dts" -type f | head -n 1)
 
 if [ -f "$DTS_FILE" ]; then
-    # 1. 彻底删除干扰的 &spi0 节点 (NAND 专属配置)
-    awk '
-    BEGIN { skip=0; brace_count=0 }
-    /^[ \t]*&spi0 \{/ { skip=1; brace_count=1; next }
-    skip==1 {
-        brace_count += gsub(/\{/, "{")
-        brace_count -= gsub(/\}/, "}")
-        if (brace_count <= 0) skip=0
-        next
-    }
-    { print }
-    ' "$DTS_FILE" > "${DTS_FILE}.tmp" && mv "${DTS_FILE}.tmp" "$DTS_FILE"
-
-    # 2. 追加 eMMC 专属配置 (仅读取 MAC，让 EEPROM Fallback 到 NX30Pro 文件)
+    # 直接在文件末尾追加配置，利用 DTS 后加载覆盖前加载的特性
     cat >> "$DTS_FILE" <<EOF
 
+/* 禁用 NAND 专属的 spi0 节点以防冲突 */
+&spi0 {
+	status = "disabled";
+};
+
+/* 追加 eMMC 专属 MAC 和设备配置 */
 &wifi {
 	status = "okay";
 	nvmem-cells = <&macaddr_factory_2a 0>;
@@ -107,6 +100,8 @@ EOF
 else
     echo "Warning: mt7981b-cmcc-rax3000m.dts not found!"
 fi
+
+# =========================================================
 # =========================================================
 
 # =========================================================
