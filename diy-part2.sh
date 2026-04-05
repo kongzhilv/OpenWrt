@@ -40,7 +40,7 @@ echo "Patching CMCC RAX3000M to map native MAC addresses..."
 # 自动查找源码中的 RAX3000M 基础设备树文件
 DTS_FILE=$(find target/linux/mediatek -name "mt7981b-cmcc-rax3000m.dts" -type f | head -n 1)
 
-if[ -f "$DTS_FILE" ]; then
+if [ -f "$DTS_FILE" ]; then
     # 1. 彻底删除干扰的 &spi0 节点 (NAND 专属配置)
     awk '
     BEGIN { skip=0; brace_count=0 }
@@ -124,8 +124,7 @@ uci commit luci
 for iface in $(uci show wireless | grep "=wifi-device" | cut -d'.' -f2 | cut -d'=' -f1); do
     band=$(uci -q get wireless.${iface}.band)
     
-    # 修复了这里的 Bash 语法错误（elif 和 [ 之间必须有空格）
-    if[ "$band" = "2g" ]; then
+    if [ "$band" = "2g" ]; then
         uci set wireless.default_${iface}.ssid="OpenWrt_2.4G"
     elif [ "$band" = "5g" ]; then
         uci set wireless.default_${iface}.ssid="OpenWrt_5G"
@@ -133,7 +132,7 @@ for iface in $(uci show wireless | grep "=wifi-device" | cut -d'.' -f2 | cut -d'
         # 兜底保障
         if [ "$iface" = "radio0" ]; then
             uci set wireless.default_${iface}.ssid="OpenWrt_2.4G"
-        elif[ "$iface" = "radio1" ]; then
+        elif [ "$iface" = "radio1" ]; then
             uci set wireless.default_${iface}.ssid="OpenWrt_5G"
         fi
     fi
