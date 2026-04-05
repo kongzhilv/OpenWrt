@@ -66,13 +66,12 @@ if [ -f "$DTS_FILE" ]; then
 	nvmem-cell-names = "mac-address";
 };
 
+/* 修复点：去掉了不存在的 1.8V 和 3.3V 虚拟电源节点，保留核心的 eMMC 驱动参数 */
 &mmc0 {
 	bus-width = <8>;
 	max-frequency = <50000000>;
 	cap-mmc-highspeed;
 	cap-mmc-hw-reset;
-	vmmc-supply = <&reg_3p3v>;
-	vqmmc-supply = <&reg_1p8v>;
 	non-removable;
 	status = "okay";
 };
@@ -100,8 +99,6 @@ EOF
 else
     echo "Warning: mt7981b-cmcc-rax3000m.dts not found!"
 fi
-
-# =========================================================
 # =========================================================
 
 # =========================================================
