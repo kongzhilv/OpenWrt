@@ -38,7 +38,13 @@ jobs:
         sudo timedatectl set-timezone "$TZ"
 
     - name: 克隆源码
-      run: git clone $REPO_URL -b $REPO_BRANCH openwrt
+      run: |
+        git clone $REPO_URL openwrt
+        cd openwrt
+        # 模仿 shiyu1314 仓库的逻辑，动态寻找最新 v25.* 标签并切换
+        _release_tag=$(git tag --sort=taggerdate --list 'v25.*' | tail -1)
+        echo "查找到最新正式版标签：$_release_tag，正在切换..."
+        git checkout $_release_tag
 
     - name: 加载自定义软件源 (DIY-part1)
       run: |
