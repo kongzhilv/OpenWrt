@@ -1,4 +1,4 @@
-name: Build OpenWrt 25.12.1 Official (RAX3000M eMMC)
+name: Build OpenWrt (shiyu1314 Closed-Source Base)
 
 on:
   repository_dispatch:
@@ -8,9 +8,9 @@ permissions:
   contents: write
 
 env:
-  REPO_URL: https://github.com/openwrt/openwrt.git
-  # 精准锁定拉取官方真正的 v25.12.1 正式版源码
-  REPO_BRANCH: v25.12.1
+  # 核心修改：使用 shiyu1314 的源码和 25.12 分支
+  REPO_URL: https://github.com/shiyu1314/openwrt-source
+  REPO_BRANCH: openwrt-25.12
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
@@ -37,10 +37,8 @@ jobs:
         sudo apt-get -y install build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-setuptools rsync unzip zlib1g-dev file wget
         sudo timedatectl set-timezone "$TZ"
 
-    - name: 克隆 OpenWrt 官方源码
-      run: |
-        # 这里的 -b 会精确 checkout 到 v25.12.1 这个 tag
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
+    - name: 克隆源码
+      run: git clone $REPO_URL -b $REPO_BRANCH openwrt
 
     - name: 加载自定义软件源 (DIY-part1)
       run: |
@@ -75,7 +73,7 @@ jobs:
       id: compile
       env:
         GITHUB_ACTIONS: false
-        CI: false  # 新增：把通用的 CI 标识也给屏蔽掉
+        CI: false
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile"
@@ -88,9 +86,8 @@ jobs:
       run: |
         cd openwrt/bin/targets/*/*
         rm -rf packages
-        
+        # 这个源码自带打包逻辑，所以放宽条件，保留 .bin 和 .itb
         find . -maxdepth 1 -type f ! -name "*.itb" ! -name "*.bin" ! -name "*.img*" ! -name "*.gz" ! -name "*.manifest" -exec rm -f {} +
-        
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
         
@@ -100,9 +97,7 @@ jobs:
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
-        echo "🚀 RAX3000M eMMC 专属 OpenWrt v25.12.1 正式版编译完成" >> release.txt
-        echo "📦 已修复 Wi-Fi，集成 Argon 主题、全中文补丁及 OpenClash" >> release.txt
-        echo "⚠️ 注意：此为官方 FIT 格式，须经由 SSH 强制刷入 eMMC" >> release.txt
+        echo "🚀 RAX3000M eMMC 闭源驱动满血版编译完成" >> release.txt
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 发布至 Releases
