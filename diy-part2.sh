@@ -27,10 +27,14 @@ sed -i '/\[llvm\]/a \download-ci-llvm = false' feeds/packages/lang/rust/Makefile
 # 6. 强制修改系统默认语言为简体中文 (统一使用 zh_cn 标签)
 sed -i 's/auto/zh_cn/g' feeds/luci/modules/luci-base/root/etc/config/luci
 
-# 3. 注入 NX30 Pro 高功率 EEPROM 文件 (替换为闭源专属路径和名称)
+# 7. 注入 NX30 Pro 高功率 EEPROM 文件 (替换为闭源专属路径和名称)
 mkdir -p package/base-files/files/lib/firmware/
 curl -sLo package/base-files/files/lib/firmware/MT7981_iPAiLNA_EEPROM.bin "https://raw.githubusercontent.com/KawaiiHachimi/Actions-rax3000m-emmc/main/eeprom/nx30pro_eeprom.bin"
 cp package/base-files/files/lib/firmware/MT7981_iPAiLNA_EEPROM.bin package/base-files/files/lib/firmware/MT7981_EEPROM.bin
+
+# 8. 修复内核 6.12 遗留 iptables 的配置依赖 (防止 OpenClash 编译或启动失败)
+sed -i '/CONFIG_IP_NF_IPTABLES,/a $(eval $(if $(NF_KMOD),$(call nf_add,NF_IPT,CONFIG_IP_NF_IPTABLES_LEGACY, $(P_V4)ip_tables),))' include/netfilter.mk
+sed -i '/CONFIG_BRIDGE_NF_EBTABLES,/a $(eval $(if $(NF_KMOD),$(call nf_add,EBTABLES,CONFIG_BRIDGE_NF_EBTABLES_LEGACY, $(P_EBT)ebtables),))' include/netfilter.mk
 
 # =========================================================
 # 植入首次开机初始化脚本：仅设置中文界面
