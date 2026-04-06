@@ -83,8 +83,8 @@ jobs:
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile"
-        # 核心：用 yes "" 命令自动无脑敲回车，应对所有新增插件导致的内核询问弹窗！
-        yes "" | make -j$(nproc) || yes "" | make -j1 || yes "" | make -j1 V=s
+        # 恢复纯净编译命令，去掉惹祸的 yes ""
+        make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 提取核心固件与软件列表
