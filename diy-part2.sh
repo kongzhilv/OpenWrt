@@ -37,6 +37,13 @@ sed -i '/CONFIG_IP_NF_IPTABLES,/a $(eval $(if $(NF_KMOD),$(call nf_add,NF_IPT,CO
 sed -i '/CONFIG_BRIDGE_NF_EBTABLES,/a $(eval $(if $(NF_KMOD),$(call nf_add,EBTABLES,CONFIG_BRIDGE_NF_EBTABLES_LEGACY, $(P_EBT)ebtables),))' include/netfilter.mk
 
 # =========================================================
+# 1. 修复 conninfra / mt_wifi 闭源驱动编译报错 (拉取并打上 002 号补丁)
+# =========================================================
+curl -sLo symvers.patch "https://raw.githubusercontent.com/shiyu1314/openwrt-rax3000m-25.12/main/patch/diy/002-include-kernel-Always-collect-module-symvers.patch"
+patch -p1 < symvers.patch
+rm -f symvers.patch
+
+# =========================================================
 # 9. 终极修复：解决 OpenClash 触发内核 6.12 弹窗导致的 syncconfig Error 1 卡死
 # =========================================================
 echo "注入缺失的内核防火墙配置..."
