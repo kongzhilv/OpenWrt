@@ -37,6 +37,21 @@ sed -i '/CONFIG_IP_NF_IPTABLES,/a $(eval $(if $(NF_KMOD),$(call nf_add,NF_IPT,CO
 sed -i '/CONFIG_BRIDGE_NF_EBTABLES,/a $(eval $(if $(NF_KMOD),$(call nf_add,EBTABLES,CONFIG_BRIDGE_NF_EBTABLES_LEGACY, $(P_EBT)ebtables),))' include/netfilter.mk
 
 # =========================================================
+# 9. 终极修复：解决 OpenClash 触发内核 6.12 弹窗导致的 syncconfig Error 1 卡死
+# =========================================================
+echo "注入缺失的内核防火墙配置..."
+cat >> target/linux/mediatek/filogic/config-6.12 <<EOF
+CONFIG_NF_CONNTRACK_CHAIN_EVENTS=y
+CONFIG_NETFILTER_NETLINK=y
+CONFIG_NF_CONNTRACK_MARK=y
+CONFIG_NF_CONNTRACK_ZONES=y
+CONFIG_NF_CONNTRACK_EVENTS=y
+CONFIG_NF_CONNTRACK_PROCFS=y
+CONFIG_NETFILTER_INGRESS=y
+EOF
+# =========================================================
+
+# =========================================================
 # 植入首次开机初始化脚本：仅设置中文界面
 # (无需破解国家代码，闭源驱动带专属管理面板，后台直接改)
 # =========================================================
