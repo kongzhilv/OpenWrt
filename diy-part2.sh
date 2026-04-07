@@ -1,50 +1,47 @@
 #!/bin/bash
-# 描述: 编译前执行，用于修改系统默认配置和修复冲突
+# 描述: 专配 shiyu1314 闭源源码的终极 DIY 脚本
 
 # 1. 修改默认后台 IP 为 192.168.2.1
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate
 
-# 2. 物理删除 kenzok8/small 源中引发“死循环”报错的无用插件
-rm -rf feeds/small/*homeproxy*
-rm -rf feeds/small/*momo*
-rm -rf feeds/small/*fchomo*
-rm -rf feeds/small/*nikki*
-rm -rf feeds/kenzo/*homeproxy*
-rm -rf feeds/kenzo/*momo*
-rm -rf feeds/kenzo/*fchomo*
-rm -rf feeds/kenzo/*nikki*
-
-# 3. 单独拉取最新的 Argon 主题源码
-git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon.git package/luci-theme-argon
-
-# 4. 强制将默认主题由 bootstrap 替换为 argon
-sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
-
-# 5. 暴力修复 Rust 编译交叉冲突
-sed -i '/download-ci-llvm/d' feeds/packages/lang/rust/Makefile
-sed -i '/\[llvm\]/a \download-ci-llvm = false' feeds/packages/lang/rust/Makefile
-
-# 6. 强制修改系统默认语言为简体中文 (统一使用 zh_cn 标签)
+# 2. 强制修改系统默认语言为简体中文
 sed -i 's/auto/zh_cn/g' feeds/luci/modules/luci-base/root/etc/config/luci
 
-# 7. 注入 NX30 Pro 高功率 EEPROM 文件 (替换为闭源专属路径和名称)
+# 3. 物理删除 kenzok8/small 源中引发“死循环”报错的无用插件
+rm -rf feeds/small/*homeproxy* feeds/small/*momo* feeds/small/*fchomo* feeds/small/*nikki*
+rm -rf feeds/kenzo/*homeproxy* feeds/kenzo/*momo* feeds/kenzo/*fchomo* feeds/kenzo/*nikki*
+
+# 4. 单独拉取最新的 Argon 主题源码
+git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon.git package/luci-theme-argon
+sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
+
+# 5. 注入 NX30 Pro 高功率 EEPROM 文件
 mkdir -p package/base-files/files/lib/firmware/
 curl -sLo package/base-files/files/lib/firmware/MT7981_iPAiLNA_EEPROM.bin "https://raw.githubusercontent.com/KawaiiHachimi/Actions-rax3000m-emmc/main/eeprom/nx30pro_eeprom.bin"
 cp package/base-files/files/lib/firmware/MT7981_iPAiLNA_EEPROM.bin package/base-files/files/lib/firmware/MT7981_EEPROM.bin
 
-# 8. 修复内核 6.12 遗留 iptables 的配置依赖 (防止 OpenClash 编译或启动失败)
-sed -i '/CONFIG_IP_NF_IPTABLES,/a $(eval $(if $(NF_KMOD),$(call nf_add,NF_IPT,CONFIG_IP_NF_IPTABLES_LEGACY, $(P_V4)ip_tables),))' include/netfilter.mk
-sed -i '/CONFIG_BRIDGE_NF_EBTABLES,/a $(eval $(if $(NF_KMOD),$(call nf_add,EBTABLES,CONFIG_BRIDGE_NF_EBTABLES_LEGACY, $(P_EBT)ebtables),))' include/netfilter.mk
+# =========================================================
+# 6. 完美复刻原作者核心补丁群 (替代原来所有零散的 sed 修改)
+# =========================================================
+echo "开始拉取并应用底层保命补丁..."
+mkdir -p /tmp/patches && cd /tmp/patches
+# 001: 解决 Rust 编译报错
+curl -sLo 001.patch "https://raw.githubusercontent.com/shiyu1314/openwrt-rax3000m-25.12/main/patch/diy/001-rust-disable-ci-mode.patch"
+# 002: 解决 conninfra / mt_wifi 树外模块 undefined 报错
+curl -sLo 002.patch "https://raw.githubusercontent.com/shiyu1314/openwrt-rax3000m-25.12/main/patch/diy/002-include-kernel-Always-collect-module-symvers.patch"
+# 003: 解决 iptables 依赖问题
+curl -sLo 003.patch "https://raw.githubusercontent.com/shiyu1314/openwrt-rax3000m-25.12/main/patch/diy/003-include-netfilter-update-kernel-config-options-for-l.patch"
+# 004: 解决 fw4 自定义防火墙支持 (OpenClash 必需)
+curl -sLo 004.patch "https://raw.githubusercontent.com/shiyu1314/openwrt-rax3000m-25.12/main/patch/diy/004-openwrt-firewall4-add-custom-nft-command-support.patch"
+
+cd $GITHUB_WORKSPACE/openwrt
+patch -p1 < /tmp/patches/001.patch
+patch -p1 < /tmp/patches/002.patch
+patch -p1 < /tmp/patches/003.patch
+patch -p1 < /tmp/patches/004.patch
 
 # =========================================================
-# 1. 修复 conninfra / mt_wifi 闭源驱动编译报错 (拉取并打上 002 号补丁)
-# =========================================================
-curl -sLo symvers.patch "https://raw.githubusercontent.com/shiyu1314/openwrt-rax3000m-25.12/main/patch/diy/002-include-kernel-Always-collect-module-symvers.patch"
-patch -p1 < symvers.patch
-rm -f symvers.patch
-
-# =========================================================
-# 9. 终极修复：解决 OpenClash 触发内核 6.12 弹窗导致的 syncconfig Error 1 卡死
+# 7. 解决 OpenClash 触发内核 6.12 弹窗导致的 syncconfig Error 1 卡死
 # =========================================================
 echo "注入缺失的内核防火墙配置..."
 cat >> target/linux/mediatek/filogic/config-6.12 <<EOF
@@ -56,20 +53,21 @@ CONFIG_NF_CONNTRACK_EVENTS=y
 CONFIG_NF_CONNTRACK_PROCFS=y
 CONFIG_NETFILTER_INGRESS=y
 EOF
-# =========================================================
 
 # =========================================================
-# 植入首次开机初始化脚本：仅设置中文界面
-# (无需破解国家代码，闭源驱动带专属管理面板，后台直接改)
+# 8. 复刻内核 Vermagic 修复 (防止编译出的模块开机加载失败)
+# =========================================================
+sed -ie 's/^\(.\).*vermagic$/\1cp $(TOPDIR)\/.vermagic $(LINUX_DIR)\/.vermagic/' include/kernel-defaults.mk
+grep HASH target/linux/generic/kernel-6.12 | awk -F'HASH-' '{print $2}' | awk '{print $1}' | md5sum | awk '{print $1}' > .vermagic
+
+# =========================================================
+# 9. 植入首次开机初始化脚本：仅设置中文界面
 # =========================================================
 mkdir -p files/etc/uci-defaults
 cat << 'EOF' > files/etc/uci-defaults/99-custom-setup
 #!/bin/sh
-
 uci -q set luci.main.lang=zh_cn
 uci commit luci
-
 rm -f /etc/uci-defaults/99-custom-setup
 exit 0
 EOF
-# =========================================================
