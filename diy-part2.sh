@@ -1,5 +1,5 @@
 #!/bin/bash
-# 描述: 闭源满血版 - 终极分支修正版
+# 描述: 闭源满血版 - 终极配置注入版 (破解 conninfra 报错的真正答案)
 
 # 1. 基础 IP 和语言配置
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate
@@ -19,9 +19,7 @@ rm -rf feeds/packages/net/{samba4,v2ray-geodata,mosdns,sing-box,aria2,ariang,adg
 git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon.git package/luci-theme-argon
 sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
 
-# =========================================================
-# 5. 【真正的完美拉取】指定分支为 25.12！
-# =========================================================
+# 5. 克隆 shiyu1314 的补丁仓库并打入补丁 (已证明完美成功)
 echo "正在克隆 shiyu1314 的补丁仓库 (25.12分支)..."
 git clone -b 25.12 --depth=1 https://github.com/shiyu1314/openwrt-rax3000m.git /tmp/shiyu_repo
 
@@ -35,7 +33,6 @@ patch -p1 --no-backup-if-mismatch < /tmp/shiyu_repo/patch/diy/004-openwrt-firewa
 RUST_VERSION=1.94.0
 RUST_HASH=0b53ae34f5c0c3612cfe1de139f9167a018cd5737bc2205664fd69ba9b25f600
 sed -ri "s/(PKG_VERSION:=)[^\"]*/\1$RUST_VERSION/;s/(PKG_HASH:=)[^\"]*/\1$RUST_HASH/" feeds/packages/lang/rust/Makefile
-# =========================================================
 
 # 7. 内核 Vermagic 校验修复 (防止刷机后无 Wi-Fi)
 sed -ie 's/^\(.\).*vermagic$/\1cp $(TOPDIR)\/.vermagic $(LINUX_DIR)\/.vermagic/' include/kernel-defaults.mk
@@ -57,7 +54,18 @@ CONFIG_NF_CONNTRACK_PROCFS=y
 CONFIG_NETFILTER_INGRESS=y
 EOF
 
-# 10. 首次开机设置
+# =========================================================
+# 10. 【终极绝杀】暴力提取并注入 MTK 闭源驱动所需的硬件宏定义！
+# 这是驱动能找到硬件 ID 的前提，也是彻底解决 conninfra 报错的钥匙。
+# =========================================================
+echo "正在注入 MTK 专属内核与驱动配置..."
+grep -E '^(CONFIG_MTK_|CONFIG_CONNINFRA_|CONFIG_WARP_)' /tmp/shiyu_repo/config/config-common >> .config
+echo "CONFIG_PACKAGE_kmod-mt_wifi=y" >> .config
+echo "CONFIG_PACKAGE_luci-app-mtwifi-cfg=y" >> .config
+echo "CONFIG_PACKAGE_mtwifi-cfg-ucode=y" >> .config
+# =========================================================
+
+# 11. 首次开机设置
 mkdir -p files/etc/uci-defaults
 cat << 'EOF' > files/etc/uci-defaults/99-custom-setup
 #!/bin/sh
