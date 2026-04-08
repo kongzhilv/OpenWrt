@@ -1,5 +1,5 @@
 #!/bin/bash
-# 描述: 闭源满血版 - Git原生提取补丁，彻底杜绝格式损坏
+# 描述: 闭源满血版 - 感谢你的精准排错，使用正确的官方仓库拉取原生补丁！
 
 # 1. 基础 IP 和语言配置
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate
@@ -20,11 +20,10 @@ git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon.git package/lu
 sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
 
 # =========================================================
-# 5. 【终极大招】直接克隆作者仓库，使用原装本地补丁
-# 彻底杜绝 URL 404 和 复制粘贴导致的 Tab 缩进丢失问题！
+# 5. 【完美的本地拉取方案】克隆你测试成功的正确仓库地址！
 # =========================================================
 echo "正在克隆 shiyu1314 的补丁仓库..."
-git clone --depth=1 https://github.com/shiyu1314/openwrt-rax3000m-25.12.git /tmp/shiyu_repo
+git clone --depth=1 https://github.com/shiyu1314/openwrt-rax3000m.git /tmp/shiyu_repo
 
 echo "打入底层保命补丁..."
 patch -p1 --no-backup-if-mismatch < /tmp/shiyu_repo/patch/diy/001-rust-disable-ci-mode.patch
