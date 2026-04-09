@@ -5,14 +5,14 @@
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate
 sed -i 's/auto/zh_cn/g' feeds/luci/modules/luci-base/root/etc/config/luci
 
-# 2. 拉取闭源专用的底层通信驱动和代理辅助包
+# 2. 拉取闭源专用的底层通信驱动和代理辅助包 (已修复 proxy 拼写)
 git clone -b packages --depth 1 https://github.com/shiyu1314/openwrt-feeds package/xd
-git clone -b porxy --depth 1 https://github.com/shiyu1314/openwrt-feeds package/porxy
+git clone -b proxy --depth 1 https://github.com/shiyu1314/openwrt-feeds package/proxy
 
-# 3. 清理引发死循环的冲突包
+# 3. 清理引发死循环的冲突包 (已保留 dockerman)
 rm -rf feeds/small/*homeproxy* feeds/small/*momo* feeds/small/*fchomo* feeds/small/*nikki*
 rm -rf feeds/kenzo/*homeproxy* feeds/kenzo/*momo* feeds/kenzo/*fchomo* feeds/kenzo/*nikki*
-rm -rf feeds/luci/applications/{luci-app-dockerman,luci-app-samba4,luci-app-aria2,luci-app-diskman}
+rm -rf feeds/luci/applications/{luci-app-samba4,luci-app-aria2,luci-app-diskman}
 rm -rf feeds/packages/net/{samba4,v2ray-geodata,mosdns,sing-box,aria2,ariang,adguardhome}
 
 # 4. 强制替换 Argon 主题
@@ -56,7 +56,6 @@ EOF
 
 # =========================================================
 # 10. 【终极绝杀】暴力提取并注入 MTK 闭源驱动所需的硬件宏定义！
-# 这是驱动能找到硬件 ID 的前提，也是彻底解决 conninfra 报错的钥匙。
 # =========================================================
 echo "正在注入 MTK 专属内核与驱动配置..."
 grep -E '^(CONFIG_MTK_|CONFIG_CONNINFRA_|CONFIG_WARP_)' /tmp/shiyu_repo/config/config-common >> .config
