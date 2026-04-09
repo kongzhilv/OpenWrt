@@ -8,7 +8,6 @@ permissions:
   contents: write
 
 env:
-  # 核心修改：使用 shiyu1314 的源码和 25.12 分支
   REPO_URL: https://github.com/shiyu1314/openwrt-source
   REPO_BRANCH: openwrt-25.12
   FEEDS_CONF: feeds.conf.default
@@ -21,7 +20,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04 # 核心优化1：使用最稳定的编译环境
 
     steps:
     - name: 检出当前仓库代码
@@ -39,12 +38,18 @@ jobs:
 
     - name: 克隆源码
       run: |
-        git clone $REPO_URL openwrt
+        # 核心优化2：带容错机制的拉取和分支切换逻辑
+        git clone -b $REPO_BRANCH --tags $REPO_URL openwrt
         cd openwrt
-        # 模仿 shiyu1314 仓库的逻辑，动态寻找最新 v25.* 标签并切换
+        
         _release_tag=$(git tag --sort=taggerdate --list 'v25.*' | tail -1)
-        echo "查找到最新正式版标签：$_release_tag，正在切换..."
-        git checkout $_release_tag
+        
+        if [ -n "$_release_tag" ]; then
+          echo "查找到最新正式版标签：$_release_tag，正在切换..."
+          git checkout $_release_tag
+        else
+          echo "未查找到 v25.* 标签，将使用默认分支 $REPO_BRANCH 继续编译..."
+        fi
 
     - name: 加载自定义软件源 (DIY-part1)
       run: |
@@ -75,7 +80,7 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: 编译源码
+    - name: 编译源码 (带完整日志导出)
       id: compile
       env:
         GITHUB_ACTIONS: false
@@ -83,9 +88,17 @@ jobs:
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile"
-        # 恢复纯净编译命令，去掉惹祸的 yes ""
-        make -j$(nproc) || make -j1 || make -j1 V=s
+        # 核心优化3：多线程跑并把完整详细日志存入文件，失败时单线程在网页端打印报错现场
+        make -j$(nproc) V=s > build_full.log 2>&1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: 上传完整编译日志 (Artifact)
+      uses: actions/upload-artifact@v4
+      if: always() # 无论成功还是报错中断，都会执行这步上传黑匣子日志
+      with:
+        name: OpenWrt_Build_Full_Log
+        path: openwrt/build_full.log
+        retention-days: 7
 
     - name: 提取核心固件与软件列表
       id: organize
@@ -93,7 +106,6 @@ jobs:
       run: |
         cd openwrt/bin/targets/*/*
         rm -rf packages
-        # 这个源码自带打包逻辑，所以放宽条件，保留 .bin 和 .itb
         find . -maxdepth 1 -type f ! -name "*.itb" ! -name "*.bin" ! -name "*.img*" ! -name "*.gz" ! -name "*.manifest" -exec rm -f {} +
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
