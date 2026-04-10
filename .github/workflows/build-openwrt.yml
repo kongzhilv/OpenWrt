@@ -23,7 +23,7 @@ jobs:
 
     steps:
     - name: 检出当前仓库代码
-      uses: actions/checkout@main
+      uses: actions/checkout@v4
 
     - name: 创建日志目录
       run: mkdir -p logs release-files
@@ -116,7 +116,7 @@ jobs:
           cp .config ../logs/06_final.config
         } 2>&1 | tee logs/06_diy_part2_and_defconfig.log
 
-    - name: 校验最终机型必须是 RAX3000M eMMC
+    - name: 校验最终机型必须是 RAX3000M
       shell: bash
       run: |
         set -o pipefail
@@ -126,8 +126,8 @@ jobs:
           cd openwrt
           grep -q '^CONFIG_TARGET_mediatek=y$' .config
           grep -q '^CONFIG_TARGET_mediatek_filogic=y$' .config
-          grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_cmcc_rax3000m-emmc=y$' .config
-          echo "最终机型校验通过：cmcc_rax3000m-emmc"
+          grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_cmcc_rax3000m=y$' .config
+          echo "最终机型校验通过：cmcc_rax3000m"
         } 2>&1 | tee logs/07_validate_target.log
 
     - name: 下载软件包依赖
@@ -181,7 +181,7 @@ jobs:
         } > logs/10_disk_and_outputs.log 2>&1
 
     - name: 上传各阶段日志与最终配置
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       if: always()
       with:
         name: OpenWrt_Build_Logs_${{ github.run_number }}
@@ -189,14 +189,14 @@ jobs:
         retention-days: 7
         if-no-files-found: warn
 
-    - name: 只提取 RAX3000M 固件
+    - name: 只提取 RAX3000M eMMC 固件
       id: organize
       if: steps.compile.outputs.status == 'success'
       shell: bash
       run: |
         set -o pipefail
         {
-          echo "===== 只提取 RAX3000M 文件 ====="
+          echo "===== 只提取 RAX3000M eMMC 文件 ====="
           date
           cd openwrt/bin/targets/*/*
 
@@ -205,6 +205,10 @@ jobs:
 
           find . -maxdepth 1 -type f \
             \( -iname "*rax3000m*" -o -iname "*cmcc_rax3000m*" \) \
+            -exec cp -f {} "$GITHUB_WORKSPACE/release-files/" \;
+
+          find . -maxdepth 1 -type f \
+            \( -iname "*emmc*gpt.bin" -o -iname "*emmc*preloader.bin" -o -iname "*emmc*bl31-uboot.fip" \) \
             -exec cp -f {} "$GITHUB_WORKSPACE/release-files/" \;
 
           echo
@@ -217,11 +221,11 @@ jobs:
           echo "status=success" >> "$GITHUB_OUTPUT"
         } 2>&1 | tee logs/11_organize_firmware.log
 
-    - name: 上传筛选后的 RAX3000M 固件
-      uses: actions/upload-artifact@v4
+    - name: 上传筛选后的 RAX3000M eMMC 固件
+      uses: actions/upload-artifact@v6
       if: steps.organize.outputs.status == 'success'
       with:
-        name: RAX3000M_Firmware_${{ github.run_number }}
+        name: RAX3000M_eMMC_Firmware_${{ github.run_number }}
         path: release-files/
         retention-days: 7
         if-no-files-found: error
