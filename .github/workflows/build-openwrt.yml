@@ -1,4 +1,4 @@
-name: Build OpenWrt (Open-Source Wi-Fi Base)
+name: Build OpenWrt (RAX3000M eMMC)
 
 on:
   repository_dispatch:
@@ -8,11 +8,8 @@ permissions:
   contents: write
 
 env:
-  # 拨乱反正：使用真正的 OpenWrt 官方仓库
   REPO_URL: https://github.com/openwrt/openwrt
-  # 精准锁定你要求的 25.12.1 版本标签
   REPO_BRANCH: v25.12.1
-  FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
@@ -28,82 +25,221 @@ jobs:
     - name: 检出当前仓库代码
       uses: actions/checkout@main
 
+    - name: 创建日志目录
+      run: mkdir -p logs release-files
+
     - name: 初始化编译环境
       env:
         DEBIAN_FRONTEND: noninteractive
+      shell: bash
       run: |
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-        sudo docker image prune --all --force
-        sudo apt-get update
-        sudo apt-get -y install build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-setuptools rsync unzip zlib1g-dev file wget
-        sudo timedatectl set-timezone "$TZ"
+        set -o pipefail
+        {
+          echo "===== 初始化编译环境 ====="
+          date
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          sudo apt-get update
+          sudo apt-get -y install build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-setuptools rsync unzip zlib1g-dev file wget
+          sudo timedatectl set-timezone "$TZ"
+          df -h
+        } 2>&1 | tee logs/01_init_env.log
 
-    - name: 克隆源码 (精准锁定版本)
+    - name: 克隆源码
+      shell: bash
       run: |
-        echo "正在克隆官方 OpenWrt 仓库，目标版本: $REPO_BRANCH"
-        # 直接克隆官方的特定版本标签，极速且不会出错
-        git clone -b $REPO_BRANCH --depth 1 $REPO_URL openwrt
+        set -o pipefail
+        {
+          echo "===== 克隆源码 ====="
+          date
+          echo "正在克隆官方 OpenWrt 仓库，目标版本: $REPO_BRANCH"
+          git clone -b "$REPO_BRANCH" --depth 1 "$REPO_URL" openwrt
+          cd openwrt
+          git log -1 --oneline
+        } 2>&1 | tee logs/02_clone_source.log
 
     - name: 加载自定义软件源 (DIY-part1)
+      shell: bash
       run: |
-        chmod +x $DIY_P1_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
+        set -o pipefail
+        {
+          echo "===== DIY-part1 ====="
+          date
+          chmod +x "$DIY_P1_SH"
+          cd openwrt
+          "$GITHUB_WORKSPACE/$DIY_P1_SH"
+        } 2>&1 | tee logs/03_diy_part1.log
 
-    - name: 更新 & 安装 Feeds
+    - name: 更新 Feeds
+      shell: bash
       run: |
-        cd openwrt
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
+        set -o pipefail
+        {
+          echo "===== 更新 Feeds ====="
+          date
+          cd openwrt
+          ./scripts/feeds update -a
+        } 2>&1 | tee logs/04_feeds_update.log
 
-    - name: 加载配置并应用补丁 (DIY-part2)
+    - name: 安装 Feeds
+      shell: bash
       run: |
-        [ -e files ] && mv files openwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
-        make defconfig
+        set -o pipefail
+        {
+          echo "===== 安装 Feeds ====="
+          date
+          cd openwrt
+          ./scripts/feeds install -a
+        } 2>&1 | tee logs/05_feeds_install.log
+
+    - name: 加载配置并应用补丁
+      shell: bash
+      run: |
+        set -o pipefail
+        {
+          echo "===== DIY-part2 + defconfig ====="
+          date
+          [ -e files ] && mv files openwrt/files
+          [ -e "$CONFIG_FILE" ] && mv "$CONFIG_FILE" openwrt/.config
+          chmod +x "$DIY_P2_SH"
+          cd openwrt
+          "$GITHUB_WORKSPACE/$DIY_P2_SH"
+          make defconfig
+
+          echo
+          echo "===== 最终 .config 目标摘要 ====="
+          grep '^CONFIG_TARGET' .config || true
+          echo
+          echo "===== 最终启用的设备 ====="
+          grep '^CONFIG_TARGET_DEVICE_.*=y' .config || true
+
+          cp .config ../logs/06_final.config
+        } 2>&1 | tee logs/06_diy_part2_and_defconfig.log
+
+    - name: 校验最终机型必须是 RAX3000M eMMC
+      shell: bash
+      run: |
+        set -o pipefail
+        {
+          echo "===== 校验最终机型 ====="
+          date
+          cd openwrt
+          grep -q '^CONFIG_TARGET_mediatek=y$' .config
+          grep -q '^CONFIG_TARGET_mediatek_filogic=y$' .config
+          grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_cmcc_rax3000m-emmc=y$' .config
+          echo "最终机型校验通过：cmcc_rax3000m-emmc"
+        } 2>&1 | tee logs/07_validate_target.log
 
     - name: 下载软件包依赖
-      id: package
+      shell: bash
       run: |
-        cd openwrt
-        make download -j8
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
+        set -o pipefail
+        {
+          echo "===== 下载软件包依赖 ====="
+          date
+          cd openwrt
+          make download -j8
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
+        } 2>&1 | tee logs/08_download.log
 
-    - name: 编译源码 (纯净防撑爆模式)
+    - name: 编译源码（仅多线程）
       id: compile
       env:
         GITHUB_ACTIONS: false
         CI: false
+      shell: bash
       run: |
-        cd openwrt
-        echo -e "$(nproc) thread compile"
-        # 抛弃生成超大日志文件，遇到错误时再单线程打印精准报错
-        make -j$(nproc) || make -j1 V=s
-        echo "status=success" >> $GITHUB_OUTPUT
+        set -o pipefail
+        {
+          echo "===== 多线程编译 ====="
+          date
+          cd openwrt
+          echo "$(nproc) thread compile"
+          make -j"$(nproc)"
+        } 2>&1 | tee logs/09_compile_parallel.log
+        echo "status=success" >> "$GITHUB_OUTPUT"
 
-    - name: 提取核心固件与软件列表
+    - name: 收集构建结果清单
+      if: always()
+      shell: bash
+      run: |
+        {
+          echo "===== 磁盘占用 ====="
+          date
+          df -h
+          echo
+          echo "===== 目录体积 ====="
+          du -sh openwrt 2>/dev/null || true
+          du -sh openwrt/dl 2>/dev/null || true
+          du -sh openwrt/build_dir 2>/dev/null || true
+          du -sh openwrt/staging_dir 2>/dev/null || true
+          du -sh openwrt/bin 2>/dev/null || true
+          echo
+          echo "===== bin/targets 文件列表 ====="
+          find openwrt/bin/targets -maxdepth 3 -type f | sort || true
+        } > logs/10_disk_and_outputs.log 2>&1
+
+    - name: 上传各阶段日志与最终配置
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: OpenWrt_Build_Logs_${{ github.run_number }}
+        path: logs/
+        retention-days: 7
+        if-no-files-found: warn
+
+    - name: 只提取 RAX3000M 固件
       id: organize
       if: steps.compile.outputs.status == 'success'
+      shell: bash
       run: |
-        cd openwrt/bin/targets/*/*
-        rm -rf packages
-        # 放宽条件保留有用的固件包
-        find . -maxdepth 1 -type f ! -name "*.itb" ! -name "*.bin" ! -name "*.img*" ! -name "*.gz" ! -name "*.manifest" -exec rm -f {} +
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
-        
+        set -o pipefail
+        {
+          echo "===== 只提取 RAX3000M 文件 ====="
+          date
+          cd openwrt/bin/targets/*/*
+
+          rm -rf "$GITHUB_WORKSPACE/release-files"
+          mkdir -p "$GITHUB_WORKSPACE/release-files"
+
+          find . -maxdepth 1 -type f \
+            \( -iname "*rax3000m*" -o -iname "*cmcc_rax3000m*" \) \
+            -exec cp -f {} "$GITHUB_WORKSPACE/release-files/" \;
+
+          echo
+          echo "===== 筛选后的发布文件 ====="
+          ls -lh "$GITHUB_WORKSPACE/release-files"
+
+          test "$(find "$GITHUB_WORKSPACE/release-files" -maxdepth 1 -type f | wc -l)" -gt 0
+
+          echo "FIRMWARE=$GITHUB_WORKSPACE/release-files" >> "$GITHUB_ENV"
+          echo "status=success" >> "$GITHUB_OUTPUT"
+        } 2>&1 | tee logs/11_organize_firmware.log
+
+    - name: 上传筛选后的 RAX3000M 固件
+      uses: actions/upload-artifact@v4
+      if: steps.organize.outputs.status == 'success'
+      with:
+        name: RAX3000M_Firmware_${{ github.run_number }}
+        path: release-files/
+        retention-days: 7
+        if-no-files-found: error
+
     - name: 生成 Release 标签
       id: tag
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
+      shell: bash
       run: |
-        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-        touch release.txt
-        echo "🚀 RAX3000M eMMC 纯净开源版 (基于官方 25.12.1 内核) 编译完成" >> release.txt
-        echo "status=success" >> $GITHUB_OUTPUT
+        set -o pipefail
+        {
+          echo "===== 生成 Release 标签 ====="
+          date
+          echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> "$GITHUB_OUTPUT"
+          touch release.txt
+          echo "🚀 RAX3000M eMMC 纯净开源版 (基于官方 25.12.1 内核) 编译完成" >> release.txt
+          echo "status=success" >> "$GITHUB_OUTPUT"
+        } 2>&1 | tee logs/12_release_tag.log
 
     - name: 发布至 Releases
       uses: softprops/action-gh-release@v2
