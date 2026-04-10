@@ -108,11 +108,11 @@ jobs:
             "$GITHUB_WORKSPACE/$DIY_P2_SH"
 
             echo "===== 强制重写目标机型配置 ====="
-            sed -i '/^CONFIG_TARGET_/d' .config
+            sed -i '/^CONFIG_TARGET/d' .config
             printf '%s\n' \
               'CONFIG_TARGET_mediatek=y' \
               'CONFIG_TARGET_mediatek_filogic=y' \
-              'CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_cmcc_rax3000m=y' \
+              'CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=y' \
               'CONFIG_TARGET_ROOTFS_SQUASHFS=y' >> .config
 
             make defconfig
@@ -122,7 +122,7 @@ jobs:
             grep '^CONFIG_TARGET' .config || true
             echo
             echo "===== 最终启用的设备 ====="
-            grep '^CONFIG_TARGET_DEVICE_.*=y' .config || true
+            grep '^CONFIG_TARGET_.*=y' .config || true
 
             cp .config ../logs/06_final.config
           } 2>&1 | tee logs/06_diy_part2_and_defconfig.log
@@ -137,7 +137,7 @@ jobs:
             cd openwrt
 
             echo "===== 当前最终启用的 TARGET_DEVICE ====="
-            grep '^CONFIG_TARGET_DEVICE_.*=y' .config || true
+            grep '^CONFIG_TARGET_.*=y' .config || true
 
             grep -q '^CONFIG_TARGET_mediatek=y$' .config || {
               echo "缺少 CONFIG_TARGET_mediatek=y"
@@ -149,7 +149,7 @@ jobs:
               exit 1
             }
 
-            grep -q '^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_cmcc_rax3000m=y$' .config || {
+            grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=y$' .config || {
               echo "最终机型不是 cmcc_rax3000m"
               echo "===== 实际最终目标摘要 ====="
               grep '^CONFIG_TARGET' .config || true
