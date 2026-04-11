@@ -1,0 +1,17 @@
+#!/bin/sh
+FW='/lib/firmware/mediatek/mt7981_eeprom_mt7976_dbdc.bin'
+SRC='/usr/share/rax3000m/mt7981_eeprom_mt7976_dbdc.bin.b64'
+MARK='/etc/rax3000m_eeprom_fallback_done'
+
+mkdir -p /lib/firmware/mediatek
+
+if [ ! -f "$MARK" ] && [ -s "$SRC" ]; then
+    if command -v base64 >/dev/null 2>&1; then
+        base64 -d "$SRC" > "$FW"
+        sync
+        touch "$MARK"
+    fi
+fi
+
+rm -f /etc/uci-defaults/99-rax3000m-eeprom-fallback
+exit 0
