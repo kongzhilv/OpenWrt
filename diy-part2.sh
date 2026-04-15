@@ -134,4 +134,30 @@ if [ -f feeds/packages/lang/rust/Makefile ]; then
   sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile
 fi
 
+# 9. BBR + 网络优化默认配置
+echo ">>> 写入 BBR 与网络优化默认配置"
+
+mkdir -p files/etc/sysctl.d
+cat << 'EOF' > files/etc/sysctl.d/99-bbr.conf
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+EOF
+
+cat << 'EOF' > files/etc/uci-defaults/98-network-optimize
+#!/bin/sh
+
+# 开启 Packet Steering
+uci -q set network.globals.packet_steering='1'
+uci commit network
+
+# 如果将来启用 SQM，保持硬件 flow offloading 关闭
+uci -q set firewall.@defaults[0].flow_offloading_hw='0'
+uci commit firewall
+
+rm -f /etc/uci-defaults/98-network-optimize
+exit 0
+EOF
+
+chmod +x files/etc/uci-defaults/98-network-optimize
+
 echo "===== diy-part2.sh 执行完成 ====="
