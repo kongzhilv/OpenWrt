@@ -1,12 +1,17 @@
 #!/bin/bash
 # 描述: 官方 OpenWrt + GitHub Actions 稳定自定义脚本
-# 目标:
+# 本版目标:
 # 1. 默认 IP 改为 192.168.2.1
 # 2. 默认语言改为中文
 # 3. 使用 Argon 主题
 # 4. 修复 OpenClash 所需内核选项
 # 5. 禁用 AdGuardHome 及其 LuCI 插件
 # 6. 修复 Rust 在 CI 环境下 host 编译失败
+# 7. 集成 Lucky
+# 注意:
+# - 本版不加硬件加速
+# - 本版不加 Wi-Fi 高功率相关配置
+# - 本版不新增额外第三方 feed，Lucky 直接走 package 目录接入
 
 set -e
 
@@ -45,15 +50,12 @@ rm -rf feeds/packages/net/sing-box 2>/dev/null || true
 rm -rf feeds/packages/net/aria2 2>/dev/null || true
 rm -rf feeds/packages/net/ariang 2>/dev/null || true
 
-# 3. 明确禁用 AdGuardHome（你现在不要它）
+# 3. 明确禁用 AdGuardHome
 echo ">>> 禁用 AdGuardHome 相关包"
-
-# 删掉第三方 feed 里的相关目录，避免继续参与编译和依赖检查
 rm -rf feeds/kenzo/adguardhome 2>/dev/null || true
 rm -rf feeds/kenzo/luci-app-adguardhome 2>/dev/null || true
 rm -rf feeds/packages/net/adguardhome 2>/dev/null || true
 
-# 从 .config 中移除并显式禁用
 if [ -f .config ]; then
   sed -i '/^CONFIG_PACKAGE_adguardhome=/d' .config
   sed -i '/^CONFIG_PACKAGE_luci-app-adguardhome=/d' .config
@@ -74,6 +76,11 @@ git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon.git package/lu
 if [ -f feeds/luci/collections/luci/Makefile ]; then
   sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
 fi
+
+# 4.1 安装 Lucky
+echo ">>> 安装 Lucky"
+rm -rf package/lucky 2>/dev/null || true
+git clone --depth=1 https://github.com/sirpdboy/luci-app-lucky.git package/lucky
 
 # 5. 内核 Vermagic 校验修复
 echo ">>> 修复 Vermagic"
@@ -117,7 +124,6 @@ EOF
 chmod +x files/etc/uci-defaults/99-custom-setup
 
 # 8. Rust CI 编译修复
-# 你的日志里真正终止构建的就是这个问题
 echo ">>> 修复 Rust 在 GitHub Actions / CI 下的 host 编译问题"
 if [ -f feeds/packages/lang/rust/Makefile ]; then
   sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile
