@@ -82,6 +82,11 @@ echo ">>> 安装 Lucky"
 rm -rf package/lucky 2>/dev/null || true
 git clone --depth=1 https://github.com/sirpdboy/luci-app-lucky.git package/lucky
 
+# 4.2 安装 eQOS Plus
+echo ">>> 安装 eQOS Plus"
+rm -rf package/luci-app-eqosplus 2>/dev/null || true
+git clone --depth=1 https://github.com/sirpdboy/luci-app-eqosplus.git package/luci-app-eqosplus
+
 # 5. 内核 Vermagic 校验修复
 echo ">>> 修复 Vermagic"
 if [ -f include/kernel-defaults.mk ]; then
