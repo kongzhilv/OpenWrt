@@ -17,7 +17,7 @@ permissions:
 env:
   REPO_URL: https://github.com/openwrt/openwrt
   REPO_BRANCH: v25.12.1
-  CONFIG_FILE: config.txt
+  CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_FIRMWARE: "true"
@@ -37,6 +37,13 @@ jobs:
     steps:
       - name: Checkout workflow repo
         uses: actions/checkout@v4
+
+      - name: Check required custom files
+        run: |
+          test -f "$CONFIG_FILE"
+          test -f "$DIY_P1_SH"
+          test -f "$DIY_P2_SH"
+          ls -lah "$CONFIG_FILE" "$DIY_P1_SH" "$DIY_P2_SH"
 
       - name: Prepare folders
         run: |
