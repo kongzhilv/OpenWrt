@@ -10,8 +10,6 @@ on:
     paths-ignore:
       - "*.md"
       - "LICENSE"
-  schedule:
-    - cron: "0 20 * * 5"
 
 permissions:
   contents: write
@@ -19,7 +17,7 @@ permissions:
 env:
   REPO_URL: https://github.com/openwrt/openwrt
   REPO_BRANCH: v25.12.1
-  CONFIG_FILE: .config
+  CONFIG_FILE: config.txt
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_FIRMWARE: "true"
@@ -46,9 +44,6 @@ jobs:
 
       - name: Init build environment
         run: |
-          set -Eeuo pipefail
-
-          echo "::group::01_init_env"
           {
             echo "===== 初始化编译环境 ====="
             date
@@ -62,20 +57,9 @@ jobs:
             sudo timedatectl set-timezone "$TZ" || true
             df -h
           } 2>&1 | tee logs/01_init_env.log
-          rc=${PIPESTATUS[0]}
-          echo "::endgroup::"
-
-          if [[ $rc -ne 0 ]]; then
-            echo "FAILED_STAGE=01_init_env" >> "$GITHUB_ENV"
-            echo "::error::01_init_env failed"
-            exit $rc
-          fi
 
       - name: Clone OpenWrt source
         run: |
-          set -Eeuo pipefail
-
-          echo "::group::02_clone_source"
           {
             echo "===== 克隆源码 ====="
             date
@@ -84,20 +68,9 @@ jobs:
             cd openwrt
             git log -1 --oneline
           } 2>&1 | tee logs/02_clone_source.log
-          rc=${PIPESTATUS[0]}
-          echo "::endgroup::"
-
-          if [[ $rc -ne 0 ]]; then
-            echo "FAILED_STAGE=02_clone_source" >> "$GITHUB_ENV"
-            echo "::error::02_clone_source failed"
-            exit $rc
-          fi
 
       - name: DIY part 1
         run: |
-          set -Eeuo pipefail
-
-          echo "::group::03_diy_part1"
           {
             echo "===== DIY-part1 ====="
             date
@@ -105,134 +78,65 @@ jobs:
             cd openwrt
             "$GITHUB_WORKSPACE/$DIY_P1_SH"
           } 2>&1 | tee logs/03_diy_part1.log
-          rc=${PIPESTATUS[0]}
-          echo "::endgroup::"
-
-          if [[ $rc -ne 0 ]]; then
-            echo "FAILED_STAGE=03_diy_part1" >> "$GITHUB_ENV"
-            echo "::error::03_diy_part1 failed"
-            exit $rc
-          fi
 
       - name: Update feeds
         run: |
-          set -Eeuo pipefail
-
-          echo "::group::04_feeds_update"
           {
             echo "===== 更新 Feeds ====="
             date
             cd openwrt
             ./scripts/feeds update -a
           } 2>&1 | tee logs/04_feeds_update.log
-          rc=${PIPESTATUS[0]}
-          echo "::endgroup::"
-
-          if [[ $rc -ne 0 ]]; then
-            echo "FAILED_STAGE=04_feeds_update" >> "$GITHUB_ENV"
-            echo "::error::04_feeds_update failed"
-            exit $rc
-          fi
 
       - name: Install feeds
         run: |
-          set -Eeuo pipefail
-
-          echo "::group::05_feeds_install"
           {
             echo "===== 安装 Feeds ====="
             date
             cd openwrt
             ./scripts/feeds install -a
           } 2>&1 | tee logs/05_feeds_install.log
-          rc=${PIPESTATUS[0]}
-          echo "::endgroup::"
-
-          if [[ $rc -ne 0 ]]; then
-            echo "FAILED_STAGE=05_feeds_install" >> "$GITHUB_ENV"
-            echo "::error::05_feeds_install failed"
-            exit $rc
-          fi
 
       - name: DIY part 2 and defconfig
         run: |
-          set -Eeuo pipefail
-
-          echo "::group::06_diy_part2_and_defconfig"
           {
             echo "===== DIY-part2 + defconfig ====="
             date
             chmod +x "$DIY_P2_SH"
-            cp -f "$CONFIG_FILE" openwrt/.config
+            cp -f "$GITHUB_WORKSPACE/$CONFIG_FILE" openwrt/.config
             cd openwrt
-            echo "===== 开始执行 diy-part2.sh ====="
             "$GITHUB_WORKSPACE/$DIY_P2_SH"
-            echo "===== diy-part2.sh 执行完成 ====="
             make defconfig
             cp -f .config "$GITHUB_WORKSPACE/logs/06_final.config"
           } 2>&1 | tee logs/06_diy_part2_and_defconfig.log
-          rc=${PIPESTATUS[0]}
-          echo "::endgroup::"
-
-          if [[ $rc -ne 0 ]]; then
-            echo "FAILED_STAGE=06_diy_part2_and_defconfig" >> "$GITHUB_ENV"
-            echo "::error::06_diy_part2_and_defconfig failed"
-            exit $rc
-          fi
 
       - name: Validate target
         run: |
-          set -Eeuo pipefail
-
-          echo "::group::07_validate_target"
           {
             echo "===== 校验最终机型 ====="
             date
             cd openwrt
             echo "===== 当前最终启用的 TARGET_DEVICE ====="
-            grep -E '^CONFIG_TARGET_.*=y|^CONFIG_TARGET_(BOARD|SUBTARGET|PROFILE|ROOTFS|INITRAMFS|UBIFS|PREINIT|INIT_SUPPRESS)' .config || true
+            grep -E '^CONFIG_TARGET_.*=y|^CONFIG_TARGET_(BOARD|SUBTARGET|PROFILE)=' .config || true
 
-            if ! grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=y' .config; then
-              echo "目标机型不是 cmcc_rax3000m"
-              exit 1
-            fi
+            grep -q '^CONFIG_TARGET_mediatek=y' .config
+            grep -q '^CONFIG_TARGET_mediatek_filogic=y' .config
+            grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=y' .config
 
             echo "最终机型校验通过：cmcc_rax3000m"
           } 2>&1 | tee logs/07_validate_target.log
-          rc=${PIPESTATUS[0]}
-          echo "::endgroup::"
-
-          if [[ $rc -ne 0 ]]; then
-            echo "FAILED_STAGE=07_validate_target" >> "$GITHUB_ENV"
-            echo "::error::07_validate_target failed"
-            exit $rc
-          fi
 
       - name: Download sources
         run: |
-          set -Eeuo pipefail
-
-          echo "::group::08_download"
           {
             echo "===== 下载软件包依赖 ====="
             date
             cd openwrt
             make download -j8 V=s
           } 2>&1 | tee logs/08_download.log
-          rc=${PIPESTATUS[0]}
-          echo "::endgroup::"
 
-          if [[ $rc -ne 0 ]]; then
-            echo "FAILED_STAGE=08_download" >> "$GITHUB_ENV"
-            echo "::error::08_download failed"
-            exit $rc
-          fi
-
-      - name: Parallel build
+      - name: Build OpenWrt
         run: |
-          set -Eeuo pipefail
-
-          echo "::group::09_compile_parallel"
           {
             echo "===== 多线程编译 ====="
             date
@@ -240,53 +144,9 @@ jobs:
             echo "$(nproc) thread compile"
             make -j"$(nproc)" V=s
           } 2>&1 | tee logs/09_compile_parallel.log
-          rc=${PIPESTATUS[0]}
-          echo "::endgroup::"
-
-          if [[ $rc -ne 0 ]]; then
-            echo "FAILED_STAGE=09_compile_parallel" >> "$GITHUB_ENV"
-
-            failed_pkg="$(grep -oE 'package/[^ ]+ failed to build\.' logs/09_compile_parallel.log | tail -n1 | sed 's/ failed to build\.//')"
-            if [[ -n "${failed_pkg:-}" ]]; then
-              echo "FAILED_PACKAGE=$failed_pkg" >> "$GITHUB_ENV"
-              echo "::error::09_compile_parallel failed at ${failed_pkg}"
-            else
-              echo "::error::09_compile_parallel failed"
-            fi
-
-            exit $rc
-          fi
-
-      - name: Retry failed package with -j1 V=s
-        if: failure()
-        run: |
-          set -Eeuo pipefail
-
-          echo "::group::09_compile_retry"
-          {
-            echo "===== 失败后串行重跑 ====="
-            date
-            cd openwrt
-
-            if [[ -n "${FAILED_PACKAGE:-}" ]]; then
-              echo "重跑失败包: ${FAILED_PACKAGE}"
-              make "${FAILED_PACKAGE}/clean" || true
-              make "${FAILED_PACKAGE}/compile" -j1 V=s
-            else
-              echo "未解析到失败包，重跑整个 world"
-              make -j1 V=s
-            fi
-          } 2>&1 | tee logs/09_compile_retry.log
-          rc=${PIPESTATUS[0]}
-          echo "::endgroup::"
-          exit $rc
 
       - name: Disk usage and outputs
-        if: always()
         run: |
-          set -Eeuo pipefail
-
-          echo "::group::10_disk_and_outputs"
           {
             echo "===== 磁盘占用 ====="
             date
@@ -302,50 +162,41 @@ jobs:
             echo "===== bin/targets 文件列表 ====="
             find openwrt/bin/targets -type f 2>/dev/null | sort || true
           } 2>&1 | tee logs/10_disk_and_outputs.log
-          rc=${PIPESTATUS[0]}
-          echo "::endgroup::"
-          exit $rc
 
       - name: Prepare firmware files
-        if: success()
+        if: env.UPLOAD_FIRMWARE == 'true'
         run: |
-          set -Eeuo pipefail
           mkdir -p release-files
-
           find openwrt/bin/targets -type f \
             \( -name "*.bin" -o -name "*.img" -o -name "*.img.gz" -o -name "*.itb" -o -name "*.manifest" -o -name "*.buildinfo" -o -name "*.json" \) \
             -exec cp -f {} release-files/ \;
-
-          echo "===== release-files ====="
           ls -lah release-files || true
 
       - name: Upload build logs artifact
-        if: always()
-        uses: actions/upload-artifact@v6
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
         with:
           name: OpenWrt_Build_Logs_${{ github.run_number }}
-          path: |
-            logs/**
+          path: logs/**
           if-no-files-found: warn
           retention-days: 14
 
       - name: Upload firmware artifact
-        if: success() && env.UPLOAD_FIRMWARE == 'true'
-        uses: actions/upload-artifact@v6
+        if: env.UPLOAD_FIRMWARE == 'true'
+        uses: actions/upload-artifact@v4
         with:
           name: OpenWrt_Firmware_${{ github.run_number }}
-          path: |
-            release-files/**
-          if-no-files-found: warn
+          path: release-files/**
+          if-no-files-found: error
           retention-days: 14
 
       - name: Generate release tag
-        if: success() && env.UPLOAD_RELEASE == 'true'
+        if: env.UPLOAD_RELEASE == 'true'
         run: |
           echo "RELEASE_TAG=OpenWrt_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
-        if: success() && env.UPLOAD_RELEASE == 'true'
+        if: env.UPLOAD_RELEASE == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
@@ -357,23 +208,6 @@ jobs:
             - Branch/Tag: ${{ env.REPO_BRANCH }}
             - Workflow run: ${{ github.run_number }}
             - Commit: ${{ github.sha }}
-          files: |
-            release-files/*
+          files: release-files/*
           draft: false
           prerelease: false
-
-      - name: Job summary
-        if: always()
-        run: |
-          {
-            echo "## OpenWrt build summary"
-            echo
-            echo "- Failed stage: ${FAILED_STAGE:-none}"
-            echo "- Failed package: ${FAILED_PACKAGE:-none}"
-            echo "- Source repo: ${REPO_URL}"
-            echo "- Source branch/tag: ${REPO_BRANCH}"
-            echo "- Timezone: ${TZ}"
-            echo
-            echo "### Generated logs"
-            ls -1 logs 2>/dev/null | sed 's/^/- /' || true
-          } >> "$GITHUB_STEP_SUMMARY"
