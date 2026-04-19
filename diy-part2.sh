@@ -6,7 +6,7 @@
 # 3. 使用 Argon 主题
 # 4. 修复 OpenClash 所需内核选项
 # 5. 禁用 AdGuardHome 及其 LuCI 插件
-# 6. 禁用 OpenList2 及其 LuCI 插件
+# 6. 禁用 OpenList2 及其 LuCI 插件（先保证主线稳定）
 # 7. 修复 Rust 在 CI 环境下 host 编译失败
 # 8. 集成 Lucky
 # 9. 集成 eQOS Plus
@@ -65,7 +65,6 @@ rm -rf feeds/kenzo/openlist2 2>/dev/null || true
 rm -rf feeds/kenzo/luci-app-openlist2 2>/dev/null || true
 
 if [ -f .config ]; then
-  # 删除旧项
   sed -i '/^CONFIG_PACKAGE_adguardhome=/d' .config
   sed -i '/^CONFIG_PACKAGE_luci-app-adguardhome=/d' .config
   sed -i '/^# CONFIG_PACKAGE_adguardhome is not set/d' .config
@@ -76,12 +75,12 @@ if [ -f .config ]; then
   sed -i '/^# CONFIG_PACKAGE_openlist2 is not set/d' .config
   sed -i '/^# CONFIG_PACKAGE_luci-app-openlist2 is not set/d' .config
 
-  cat >> .config <<'EOF'
+  cat >> .config <<'CFGEOF'
 # CONFIG_PACKAGE_adguardhome is not set
 # CONFIG_PACKAGE_luci-app-adguardhome is not set
 # CONFIG_PACKAGE_openlist2 is not set
 # CONFIG_PACKAGE_luci-app-openlist2 is not set
-EOF
+CFGEOF
 fi
 
 # 4. 强制替换 Argon 主题
@@ -117,7 +116,7 @@ fi
 echo ">>> 写入 OpenClash 所需内核配置"
 KERNEL_CFG="target/linux/mediatek/filogic/config-6.12"
 if [ -f "$KERNEL_CFG" ]; then
-  grep -q "CONFIG_NF_CONNTRACK_CHAIN_EVENTS=y" "$KERNEL_CFG" || cat >> "$KERNEL_CFG" <<'EOF'
+  grep -q "CONFIG_NF_CONNTRACK_CHAIN_EVENTS=y" "$KERNEL_CFG" || cat >> "$KERNEL_CFG" <<'CFGEOF'
 
 CONFIG_NF_CONNTRACK_CHAIN_EVENTS=y
 CONFIG_NETFILTER_NETLINK=y
@@ -126,30 +125,29 @@ CONFIG_NF_CONNTRACK_ZONES=y
 CONFIG_NF_CONNTRACK_EVENTS=y
 CONFIG_NF_CONNTRACK_PROCFS=y
 CONFIG_NETFILTER_INGRESS=y
-EOF
+CFGEOF
 fi
 
 # 7. 首次开机：基础 LuCI 默认设置
 echo ">>> 写入首次开机基础设置"
 mkdir -p files/etc/uci-defaults
 
-cat << 'EOF' > files/etc/uci-defaults/99-custom-setup
+cat << 'CFGEOF' > files/etc/uci-defaults/99-custom-setup
 uci -q set luci.main.lang='zh_cn'
 uci -q set luci.main.mediaurlbase='/luci-static/argon'
 uci commit luci
 exit 0
-EOF
+CFGEOF
 
 # 8. 首次开机：BBR + Packet Steering
 echo ">>> 写入 BBR 与网络优化默认配置"
-
 mkdir -p files/etc/sysctl.d
-cat << 'EOF' > files/etc/sysctl.d/99-bbr.conf
+cat << 'CFGEOF' > files/etc/sysctl.d/99-bbr.conf
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
-EOF
+CFGEOF
 
-cat << 'EOF' > files/etc/uci-defaults/98-network-optimize
+cat << 'CFGEOF' > files/etc/uci-defaults/98-network-optimize
 uci -q set network.globals.packet_steering='1'
 uci commit network
 
@@ -159,12 +157,11 @@ uci -q set firewall.@defaults[0].flow_offloading_hw='0'
 uci commit firewall
 
 exit 0
-EOF
+CFGEOF
 
 # 9. 首次开机：eMMC 自动改成 1GiB overlay + 剩余 data
 echo ">>> 写入 eMMC extroot 初始化脚本"
-
-cat << 'EOF' > files/etc/uci-defaults/95-emmc-extroot
+cat << 'CFGEOF' > files/etc/uci-defaults/95-emmc-extroot
 #!/bin/sh
 set -eu
 
@@ -176,45 +173,35 @@ log() {
     echo "$LOGTAG: $*"
 }
 
-# 如果已经完成过，或者当前 overlay 已经是 mmcblk0p6，则直接结束
 if [ -e /etc/.extroot_emmc_done ] || mount | grep -q '^/dev/mmcblk0p6 on /overlay '; then
     log "extroot already done, skip"
     exit 0
 fi
 
-# 只在预期设备上运行
 [ -b /dev/mmcblk0 ] || { log "/dev/mmcblk0 not found"; exit 0; }
 [ -b /dev/fitrw ] || { log "/dev/fitrw not found, skip"; exit 0; }
 
-# 依赖工具检查
 command -v parted >/dev/null 2>&1 || { log "parted missing"; exit 1; }
 command -v mkfs.ext4 >/dev/null 2>&1 || { log "mkfs.ext4 missing"; exit 1; }
 command -v blkid >/dev/null 2>&1 || { log "blkid missing"; exit 1; }
 [ -x /sbin/block ] || { log "/sbin/block missing (block-mount not included)"; exit 1; }
 
 mkdir -p /mnt/extroot /mnt/data
-
-# 防止旧的 p6 被自动挂载
 umount /mnt/mmcblk0p6 2>/dev/null || true
 umount /mnt/extroot 2>/dev/null || true
 umount /mnt/data 2>/dev/null || true
 
-# 如果 p7 不存在，说明还没做过分区，执行一次性重分区
 if [ ! -b /dev/mmcblk0p7 ]; then
     log "repartitioning /dev/mmcblk0: p6=1GiB extroot, p7=rest data"
-
-    # 只动 p6，前面的系统分区不碰
     parted -s /dev/mmcblk0 rm 6
     parted -s /dev/mmcblk0 mkpart primary ext4 512MiB 1536MiB
     parted -s /dev/mmcblk0 name 6 extroot
     parted -s /dev/mmcblk0 mkpart primary ext4 1536MiB 100%
     parted -s /dev/mmcblk0 name 7 data
-
     partprobe /dev/mmcblk0 || true
     sleep 2
 fi
 
-# 格式化
 log "formatting /dev/mmcblk0p6 and /dev/mmcblk0p7"
 mkfs.ext4 -F -L extroot /dev/mmcblk0p6
 mkfs.ext4 -F -L data /dev/mmcblk0p7
@@ -225,7 +212,6 @@ DATA_UUID="$(blkid -s UUID -o value /dev/mmcblk0p7)"
 [ -n "$EXTROOT_UUID" ] || { log "failed to get extroot UUID"; exit 1; }
 [ -n "$DATA_UUID" ] || { log "failed to get data UUID"; exit 1; }
 
-# 先在当前 overlay 里写 fstab
 log "writing /etc/config/fstab"
 uci -q delete fstab.extroot
 uci set fstab.extroot='mount'
@@ -246,19 +232,14 @@ uci set fstab.data.enabled_fsck='1'
 uci commit fstab
 /etc/init.d/fstab enable
 
-# 挂载新分区
 mount /dev/mmcblk0p6 /mnt/extroot
 mount /dev/mmcblk0p7 /mnt/data
 
-# 复制当前 overlay 到新 extroot
-log "copying current overlay to new extroot"
 tar -C /overlay -cpf - . | tar -C /mnt/extroot -xpf -
 
-# 写完成标记
 touch /etc/.extroot_emmc_done
 touch /mnt/extroot/etc/.extroot_emmc_done
 
-# 防止该脚本在当前 overlay 或新 extroot 中再次执行
 rm -f "/etc/uci-defaults/$SCRIPT_NAME"
 rm -f "/mnt/extroot/etc/uci-defaults/$SCRIPT_NAME"
 
@@ -268,9 +249,8 @@ umount /mnt/data || true
 
 log "extroot prepared, rebooting"
 reboot
-
 exit 0
-EOF
+CFGEOF
 
 chmod +x files/etc/uci-defaults/95-emmc-extroot
 chmod +x files/etc/uci-defaults/98-network-optimize
@@ -295,11 +275,11 @@ if [ -f .config ]; then
   sed -i '/^CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=/d' .config
   sed -i '/^# CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m is not set/d' .config
 
-  cat >> .config <<'EOF'
+  cat >> .config <<'CFGEOF'
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
 CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=y
-EOF
+CFGEOF
 fi
 
 echo "===== diy-part2.sh 执行完成 ====="
