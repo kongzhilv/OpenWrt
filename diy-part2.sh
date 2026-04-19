@@ -6,19 +6,15 @@
 # 3. 使用 Argon 主题
 # 4. 修复 OpenClash 所需内核选项
 # 5. 禁用 AdGuardHome 及其 LuCI 插件
-# 6. 修复 Rust 在 CI 环境下 host 编译失败
-# 7. 集成 Lucky
-# 8. 集成 eQOS Plus
-# 9. 写入 BBR + SQM 相关默认配置
-# 10. 首次开机自动将 eMMC 改成:
+# 6. 禁用 OpenList2 及其 LuCI 插件
+# 7. 修复 Rust 在 CI 环境下 host 编译失败
+# 8. 集成 Lucky
+# 9. 集成 eQOS Plus
+# 10. 写入 BBR + SQM 相关默认配置
+# 11. 首次开机自动将 eMMC 改成:
 #     - mmcblk0p6 = 1GiB ext4 -> /overlay
 #     - mmcblk0p7 = 剩余空间 ext4 -> /mnt/data
-#
-# 注意:
-# - 本版不加硬件加速
-# - 本版不加 Wi-Fi 高功率
-# - 本版不改 workflow 的 target 修复逻辑
-# - 本版不新增额外第三方 feed，Lucky / eQOS Plus 直接走 package 目录接入
+# 12. 强制修正最终 target 为 cmcc_rax3000m，防止 defconfig 跑偏到 openwrt_one
 
 set -e
 
@@ -63,15 +59,28 @@ rm -rf feeds/kenzo/adguardhome 2>/dev/null || true
 rm -rf feeds/kenzo/luci-app-adguardhome 2>/dev/null || true
 rm -rf feeds/packages/net/adguardhome 2>/dev/null || true
 
+# 3.1 明确禁用 OpenList2
+echo ">>> 禁用 OpenList2 相关包"
+rm -rf feeds/kenzo/openlist2 2>/dev/null || true
+rm -rf feeds/kenzo/luci-app-openlist2 2>/dev/null || true
+
 if [ -f .config ]; then
+  # 删除旧项
   sed -i '/^CONFIG_PACKAGE_adguardhome=/d' .config
   sed -i '/^CONFIG_PACKAGE_luci-app-adguardhome=/d' .config
   sed -i '/^# CONFIG_PACKAGE_adguardhome is not set/d' .config
   sed -i '/^# CONFIG_PACKAGE_luci-app-adguardhome is not set/d' .config
 
+  sed -i '/^CONFIG_PACKAGE_openlist2=/d' .config
+  sed -i '/^CONFIG_PACKAGE_luci-app-openlist2=/d' .config
+  sed -i '/^# CONFIG_PACKAGE_openlist2 is not set/d' .config
+  sed -i '/^# CONFIG_PACKAGE_luci-app-openlist2 is not set/d' .config
+
   cat >> .config <<'EOF'
 # CONFIG_PACKAGE_adguardhome is not set
 # CONFIG_PACKAGE_luci-app-adguardhome is not set
+# CONFIG_PACKAGE_openlist2 is not set
+# CONFIG_PACKAGE_luci-app-openlist2 is not set
 EOF
 fi
 
@@ -217,7 +226,6 @@ DATA_UUID="$(blkid -s UUID -o value /dev/mmcblk0p7)"
 [ -n "$DATA_UUID" ] || { log "failed to get data UUID"; exit 1; }
 
 # 先在当前 overlay 里写 fstab
-# 这样下次 preinit 才能从当前 rootfs_data 里读到 extroot 配置
 log "writing /etc/config/fstab"
 uci -q delete fstab.extroot
 uci set fstab.extroot='mount'
@@ -264,10 +272,34 @@ reboot
 exit 0
 EOF
 
+chmod +x files/etc/uci-defaults/95-emmc-extroot
+chmod +x files/etc/uci-defaults/98-network-optimize
+chmod +x files/etc/uci-defaults/99-custom-setup
+
 # 10. Rust CI 编译修复
 echo ">>> 修复 Rust 在 GitHub Actions / CI 下的 host 编译问题"
 if [ -f feeds/packages/lang/rust/Makefile ]; then
   sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile
+fi
+
+# 11. 强制修正目标机型，防止 defconfig 跑偏到 openwrt_one
+echo ">>> 强制修正目标机型为 cmcc_rax3000m"
+if [ -f .config ]; then
+  sed -i '/^CONFIG_TARGET_DEVICE_/d' .config
+  sed -i '/^CONFIG_TARGET_PROFILE=/d' .config
+  sed -i '/^CONFIG_TARGET_BOARD=/d' .config
+  sed -i '/^CONFIG_TARGET_SUBTARGET=/d' .config
+
+  sed -i '/^CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one=/d' .config
+  sed -i '/^# CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one is not set/d' .config
+  sed -i '/^CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=/d' .config
+  sed -i '/^# CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m is not set/d' .config
+
+  cat >> .config <<'EOF'
+CONFIG_TARGET_mediatek=y
+CONFIG_TARGET_mediatek_filogic=y
+CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=y
+EOF
 fi
 
 echo "===== diy-part2.sh 执行完成 ====="
