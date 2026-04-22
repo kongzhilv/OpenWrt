@@ -38,16 +38,15 @@ jobs:
       - name: Checkout workflow repo
         uses: actions/checkout@v4
 
-      - name: Prepare folders
-        run: |
-          mkdir -p logs release-files
-
       - name: Check required files
         run: |
           test -f "$CONFIG_FILE"
           test -f "$DIY_P1_SH"
           test -f "$DIY_P2_SH"
-          ls -lah "$CONFIG_FILE" "$DIY_P1_SH" "$DIY_P2_SH"
+
+      - name: Prepare folders
+        run: |
+          mkdir -p logs release-files
 
       - name: Init build environment
         run: |
@@ -125,11 +124,9 @@ jobs:
             cd openwrt
             echo "===== 当前最终启用的 TARGET_DEVICE ====="
             grep -E '^CONFIG_TARGET_.*=y|^CONFIG_TARGET_(BOARD|SUBTARGET|PROFILE)=' .config || true
-
             grep -q '^CONFIG_TARGET_mediatek=y' .config
             grep -q '^CONFIG_TARGET_mediatek_filogic=y' .config
             grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=y' .config
-
             echo "最终机型校验通过：cmcc_rax3000m"
           } 2>&1 | tee logs/07_validate_target.log
 
