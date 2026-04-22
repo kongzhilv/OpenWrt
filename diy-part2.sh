@@ -124,7 +124,14 @@ CONFIG_PACKAGE_luci-app-argon-config=y
 EOF_CONFIG
 fi
 
-# 8. 首次开机：基础 LuCI 默认设置
+# 8. 若仓库根目录存在 files/，则嵌入固件
+echo ">>> 合并仓库根目录 files 到 OpenWrt files"
+if [ -d "$GITHUB_WORKSPACE/files" ]; then
+  mkdir -p files
+  cp -a "$GITHUB_WORKSPACE/files/." files/
+fi
+
+# 9. 首次开机：基础 LuCI 默认设置
 echo ">>> 写入首次开机基础设置"
 mkdir -p files/etc/uci-defaults
 mkdir -p files/etc/sysctl.d
@@ -136,7 +143,7 @@ uci commit luci
 exit 0
 EOF_UCI
 
-# 9. BBR 默认配置
+# 10. BBR 默认配置
 echo ">>> 写入 BBR 默认配置"
 cat << 'EOF_BBR' > files/etc/sysctl.d/99-bbr.conf
 net.core.default_qdisc=fq
@@ -155,7 +162,7 @@ uci commit firewall
 exit 0
 EOF_NET
 
-# 10. eMMC 自动 extroot：p6 -> /overlay (1GiB), p7 -> /mnt/data
+# 11. eMMC 自动 extroot：p6 -> /overlay (1GiB), p7 -> /mnt/data
 echo ">>> 写入 eMMC extroot 初始化脚本"
 cat << 'EOF_EXTROOT' > files/etc/uci-defaults/95-emmc-extroot
 #!/bin/sh
@@ -256,7 +263,7 @@ chmod +x files/etc/uci-defaults/95-emmc-extroot
 chmod +x files/etc/uci-defaults/98-network-optimize
 chmod +x files/etc/uci-defaults/99-custom-setup
 
-# 11. Rust / CI 兼容性修复
+# 12. Rust / CI 兼容性修复
 echo ">>> 修复 Rust 在 GitHub Actions / CI 下的 host 编译问题"
 if [ -f feeds/packages/lang/rust/Makefile ]; then
   sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile
