@@ -1,20 +1,11 @@
 #!/bin/bash
 # 描述: 官方 OpenWrt + GitHub Actions 稳定自定义脚本
-# 本版目标:
-# 1. 默认 IP 改为 192.168.2.1
-# 2. 默认语言改为中文
-# 3. 使用 Argon 主题
-# 4. 修复 OpenClash 所需内核选项
-# 5. 禁用 AdGuardHome 及其 LuCI 插件
-# 6. 不再使用 kenzo/openlist2，改用 OpenListTeam/OpenList-OpenWRT
-# 7. 修复 Rust 在 CI 环境下 host 编译失败
-# 8. 集成 Lucky
-# 9. 集成 eQOS Plus
-# 10. 写入 BBR + SQM 相关默认配置
-# 11. 首次开机自动将 eMMC 改成:
-#     - mmcblk0p6 = 1GiB ext4 -> /overlay
-#     - mmcblk0p7 = 剩余空间 ext4 -> /mnt/data
-# 12. 强制修正最终 target 为 cmcc_rax3000m，防止 defconfig 跑偏到 openwrt_one
+# 方案: 插件法
+# - 温度显示: luci-app-temp-status
+# - DiskMan: luci-app-diskman
+# - ttyd: luci-app-ttyd
+# - OpenList: luci-app-openlist
+# - eMMC extroot: 首次启动自动切换到 mmcblk0p6 (1GiB)
 
 set -e
 
@@ -35,101 +26,48 @@ rm -rf feeds/small/*homeproxy* 2>/dev/null || true
 rm -rf feeds/small/*momo* 2>/dev/null || true
 rm -rf feeds/small/*fchomo* 2>/dev/null || true
 rm -rf feeds/small/*nikki* 2>/dev/null || true
-
 rm -rf feeds/kenzo/*homeproxy* 2>/dev/null || true
 rm -rf feeds/kenzo/*momo* 2>/dev/null || true
 rm -rf feeds/kenzo/*fchomo* 2>/dev/null || true
 rm -rf feeds/kenzo/*nikki* 2>/dev/null || true
 
-rm -rf feeds/luci/applications/luci-app-samba4 2>/dev/null || true
-rm -rf feeds/luci/applications/luci-app-aria2 2>/dev/null || true
-rm -rf feeds/luci/applications/luci-app-diskman 2>/dev/null || true
-
-# 清理部分容易冲突的 net 包
-rm -rf feeds/packages/net/samba4 2>/dev/null || true
-rm -rf feeds/packages/net/v2ray-geodata 2>/dev/null || true
-rm -rf feeds/packages/net/mosdns 2>/dev/null || true
-rm -rf feeds/packages/net/sing-box 2>/dev/null || true
-rm -rf feeds/packages/net/aria2 2>/dev/null || true
-rm -rf feeds/packages/net/ariang 2>/dev/null || true
-
-# 3. 明确禁用 AdGuardHome
-echo ">>> 禁用 AdGuardHome 相关包"
+# 清理旧 OpenList2 / AdGuardHome
+echo ">>> 清理旧 OpenList2 / AdGuardHome"
+rm -rf feeds/kenzo/openlist2 2>/dev/null || true
+rm -rf feeds/kenzo/luci-app-openlist2 2>/dev/null || true
+rm -rf package/openlist 2>/dev/null || true
 rm -rf feeds/kenzo/adguardhome 2>/dev/null || true
 rm -rf feeds/kenzo/luci-app-adguardhome 2>/dev/null || true
 rm -rf feeds/packages/net/adguardhome 2>/dev/null || true
 
-# 3.1 不再使用 kenzo/openlist2，改用官方 openlist 包
-echo ">>> 清理旧 OpenList2 并改用 OpenList 官方 OpenWrt 包"
-rm -rf feeds/kenzo/openlist2 2>/dev/null || true
-rm -rf feeds/kenzo/luci-app-openlist2 2>/dev/null || true
-rm -rf package/openlist 2>/dev/null || true
+# 3. 接入 OpenList 官方 OpenWrt 包
+echo ">>> 接入 OpenList 官方 OpenWrt 包"
 git clone --depth=1 https://github.com/OpenListTeam/OpenList-OpenWRT package/openlist
 
-if [ -f .config ]; then
-  # 删除旧项
-  sed -i '/^CONFIG_PACKAGE_adguardhome=/d' .config
-  sed -i '/^CONFIG_PACKAGE_luci-app-adguardhome=/d' .config
-  sed -i '/^# CONFIG_PACKAGE_adguardhome is not set/d' .config
-  sed -i '/^# CONFIG_PACKAGE_luci-app-adguardhome is not set/d' .config
-
-  sed -i '/^CONFIG_PACKAGE_openlist2=/d' .config
-  sed -i '/^CONFIG_PACKAGE_luci-app-openlist2=/d' .config
-  sed -i '/^# CONFIG_PACKAGE_openlist2 is not set/d' .config
-  sed -i '/^# CONFIG_PACKAGE_luci-app-openlist2 is not set/d' .config
-
-  sed -i '/^CONFIG_PACKAGE_openlist=/d' .config
-  sed -i '/^CONFIG_PACKAGE_luci-app-openlist=/d' .config
-  sed -i '/^CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=/d' .config
-  sed -i '/^# CONFIG_PACKAGE_openlist is not set/d' .config
-  sed -i '/^# CONFIG_PACKAGE_luci-app-openlist is not set/d' .config
-  sed -i '/^# CONFIG_PACKAGE_luci-i18n-openlist-zh-cn is not set/d' .config
-
-  cat >> .config <<'EOCFG'
-# CONFIG_PACKAGE_adguardhome is not set
-# CONFIG_PACKAGE_luci-app-adguardhome is not set
-# CONFIG_PACKAGE_openlist2 is not set
-# CONFIG_PACKAGE_luci-app-openlist2 is not set
-CONFIG_PACKAGE_openlist=y
-CONFIG_PACKAGE_luci-app-openlist=y
-CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y
-EOCFG
-fi
-
-# 4. 强制替换 Argon 主题
+# 4. Argon 主题
 echo ">>> 安装 Argon 主题"
 rm -rf package/luci-theme-argon 2>/dev/null || true
 git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon.git package/luci-theme-argon
-
+rm -rf package/luci-app-argon-config 2>/dev/null || true
+git clone --depth=1 https://github.com/jerrykuku/luci-app-argon-config.git package/luci-app-argon-config
 if [ -f feeds/luci/collections/luci/Makefile ]; then
   sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' feeds/luci/collections/luci/Makefile
 fi
 
-# 4.1 安装 Lucky
+# 5. Lucky + eQOS Plus
 echo ">>> 安装 Lucky"
 rm -rf package/lucky 2>/dev/null || true
 git clone --depth=1 https://github.com/sirpdboy/luci-app-lucky.git package/lucky
 
-# 4.2 安装 eQOS Plus
 echo ">>> 安装 eQOS Plus"
 rm -rf package/luci-app-eqosplus 2>/dev/null || true
 git clone --depth=1 https://github.com/sirpdboy/luci-app-eqosplus.git package/luci-app-eqosplus
-
-# 5. 内核 Vermagic 校验修复
-echo ">>> 修复 Vermagic"
-if [ -f include/kernel-defaults.mk ]; then
-  sed -ie 's/^\(.\).*vermagic$/\1cp $(TOPDIR)\/.vermagic $(LINUX_DIR)\/.vermagic/' include/kernel-defaults.mk
-fi
-
-if [ -f target/linux/generic/kernel-6.12 ]; then
-  grep HASH target/linux/generic/kernel-6.12 | awk -F'HASH-' '{print $2}' | awk '{print $1}' | md5sum | awk '{print $1}' > .vermagic
-fi
 
 # 6. OpenClash 所需内核配置
 echo ">>> 写入 OpenClash 所需内核配置"
 KERNEL_CFG="target/linux/mediatek/filogic/config-6.12"
 if [ -f "$KERNEL_CFG" ]; then
-  grep -q "CONFIG_NF_CONNTRACK_CHAIN_EVENTS=y" "$KERNEL_CFG" || cat >> "$KERNEL_CFG" <<'EOFKCFG'
+  grep -q "CONFIG_NF_CONNTRACK_CHAIN_EVENTS=y" "$KERNEL_CFG" || cat >> "$KERNEL_CFG" <<'EOF_KERNEL'
 
 CONFIG_NF_CONNTRACK_CHAIN_EVENTS=y
 CONFIG_NETFILTER_NETLINK=y
@@ -138,43 +76,88 @@ CONFIG_NF_CONNTRACK_ZONES=y
 CONFIG_NF_CONNTRACK_EVENTS=y
 CONFIG_NF_CONNTRACK_PROCFS=y
 CONFIG_NETFILTER_INGRESS=y
-EOFKCFG
+EOF_KERNEL
 fi
 
-# 7. 首次开机：基础 LuCI 默认设置
+# 7. 规范化 .config 中的目标与关键包选择
+echo ">>> 修正目标机型与关键包"
+if [ -f .config ]; then
+  sed -i '/^CONFIG_TARGET_DEVICE_/d' .config
+  sed -i '/^CONFIG_TARGET_PROFILE=/d' .config
+  sed -i '/^CONFIG_TARGET_BOARD=/d' .config
+  sed -i '/^CONFIG_TARGET_SUBTARGET=/d' .config
+
+  sed -i '/^CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one=/d' .config
+  sed -i '/^# CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one is not set/d' .config
+  sed -i '/^CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=/d' .config
+  sed -i '/^# CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m is not set/d' .config
+
+  sed -i '/^CONFIG_PACKAGE_adguardhome=/d' .config
+  sed -i '/^CONFIG_PACKAGE_luci-app-adguardhome=/d' .config
+  sed -i '/^CONFIG_PACKAGE_openlist2=/d' .config
+  sed -i '/^CONFIG_PACKAGE_luci-app-openlist2=/d' .config
+  sed -i '/^CONFIG_PACKAGE_openlist=/d' .config
+  sed -i '/^CONFIG_PACKAGE_luci-app-openlist=/d' .config
+  sed -i '/^CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=/d' .config
+  sed -i '/^CONFIG_PACKAGE_luci-app-diskman=/d' .config
+  sed -i '/^CONFIG_PACKAGE_luci-app-temp-status=/d' .config
+  sed -i '/^CONFIG_PACKAGE_ttyd=/d' .config
+  sed -i '/^CONFIG_PACKAGE_luci-app-ttyd=/d' .config
+  sed -i '/^CONFIG_PACKAGE_luci-app-argon-config=/d' .config
+
+  cat >> .config <<'EOF_CONFIG'
+CONFIG_TARGET_mediatek=y
+CONFIG_TARGET_mediatek_filogic=y
+CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=y
+# CONFIG_PACKAGE_adguardhome is not set
+# CONFIG_PACKAGE_luci-app-adguardhome is not set
+# CONFIG_PACKAGE_openlist2 is not set
+# CONFIG_PACKAGE_luci-app-openlist2 is not set
+CONFIG_PACKAGE_openlist=y
+CONFIG_PACKAGE_luci-app-openlist=y
+CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y
+CONFIG_PACKAGE_luci-app-diskman=y
+CONFIG_PACKAGE_luci-app-temp-status=y
+CONFIG_PACKAGE_ttyd=y
+CONFIG_PACKAGE_luci-app-ttyd=y
+CONFIG_PACKAGE_luci-app-argon-config=y
+EOF_CONFIG
+fi
+
+# 8. 首次开机：基础 LuCI 默认设置
 echo ">>> 写入首次开机基础设置"
 mkdir -p files/etc/uci-defaults
+mkdir -p files/etc/sysctl.d
 
-cat << 'EOFUCI' > files/etc/uci-defaults/99-custom-setup
+cat << 'EOF_UCI' > files/etc/uci-defaults/99-custom-setup
 uci -q set luci.main.lang='zh_cn'
 uci -q set luci.main.mediaurlbase='/luci-static/argon'
 uci commit luci
 exit 0
-EOFUCI
+EOF_UCI
 
-# 8. 首次开机：BBR + Packet Steering
-echo ">>> 写入 BBR 与网络优化默认配置"
-mkdir -p files/etc/sysctl.d
-cat << 'EOFSYSCTL' > files/etc/sysctl.d/99-bbr.conf
+# 9. BBR 默认配置
+echo ">>> 写入 BBR 默认配置"
+cat << 'EOF_BBR' > files/etc/sysctl.d/99-bbr.conf
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
-EOFSYSCTL
+EOF_BBR
 
-cat << 'EOFNET' > files/etc/uci-defaults/98-network-optimize
+cat << 'EOF_NET' > files/etc/uci-defaults/98-network-optimize
 uci -q set network.globals.packet_steering='1'
 uci commit network
 
-# 不在这里开启硬件 flow offloading
-# 因为你后续可能使用 SQM / eQOS Plus / OpenClash
+# SQM/CAKE 与硬件 flow offloading 不建议同时开
+uci -q set firewall.@defaults[0].flow_offloading='0'
 uci -q set firewall.@defaults[0].flow_offloading_hw='0'
 uci commit firewall
 
 exit 0
-EOFNET
+EOF_NET
 
-# 9. 首次开机：eMMC 自动改成 1GiB overlay + 剩余 data
+# 10. eMMC 自动 extroot：p6 -> /overlay (1GiB), p7 -> /mnt/data
 echo ">>> 写入 eMMC extroot 初始化脚本"
-cat << 'EOFEXTROOT' > files/etc/uci-defaults/95-emmc-extroot
+cat << 'EOF_EXTROOT' > files/etc/uci-defaults/95-emmc-extroot
 #!/bin/sh
 set -eu
 
@@ -186,26 +169,26 @@ log() {
     echo "$LOGTAG: $*"
 }
 
-if [ -e /etc/.extroot_emmc_done ] || mount | grep -q '^/dev/mmcblk0p6 on /overlay '; then
-    log "extroot already done, skip"
+[ -b /dev/mmcblk0 ] || { log "/dev/mmcblk0 not found"; exit 0; }
+mkdir -p /mnt/extroot /mnt/data
+
+# 如果 extroot 已经接管，直接退出
+if mount | grep -q '^/dev/mmcblk0p6 on /overlay '; then
+    log "extroot already active"
     exit 0
 fi
-
-[ -b /dev/mmcblk0 ] || { log "/dev/mmcblk0 not found"; exit 0; }
-[ -b /dev/fitrw ] || { log "/dev/fitrw not found, skip"; exit 0; }
 
 command -v parted >/dev/null 2>&1 || { log "parted missing"; exit 1; }
 command -v mkfs.ext4 >/dev/null 2>&1 || { log "mkfs.ext4 missing"; exit 1; }
 command -v blkid >/dev/null 2>&1 || { log "blkid missing"; exit 1; }
-[ -x /sbin/block ] || { log "/sbin/block missing (block-mount not included)"; exit 1; }
+[ -x /sbin/block ] || { log "/sbin/block missing"; exit 1; }
 
-mkdir -p /mnt/extroot /mnt/data
-umount /mnt/mmcblk0p6 2>/dev/null || true
 umount /mnt/extroot 2>/dev/null || true
 umount /mnt/data 2>/dev/null || true
 
+# 不存在 p7 时才重分区；已存在则直接复用
 if [ ! -b /dev/mmcblk0p7 ]; then
-    log "repartitioning /dev/mmcblk0: p6=1GiB extroot, p7=rest data"
+    log "repartitioning /dev/mmcblk0"
     parted -s /dev/mmcblk0 rm 6
     parted -s /dev/mmcblk0 mkpart primary ext4 512MiB 1536MiB
     parted -s /dev/mmcblk0 name 6 extroot
@@ -215,9 +198,9 @@ if [ ! -b /dev/mmcblk0p7 ]; then
     sleep 2
 fi
 
-log "formatting /dev/mmcblk0p6 and /dev/mmcblk0p7"
-mkfs.ext4 -F -L extroot /dev/mmcblk0p6
-mkfs.ext4 -F -L data /dev/mmcblk0p7
+# 若不是 ext4，则格式化；若已经是 ext4，则保留现有内容
+block info /dev/mmcblk0p6 | grep -q 'TYPE="ext4"' || mkfs.ext4 -F -L extroot /dev/mmcblk0p6
+block info /dev/mmcblk0p7 | grep -q 'TYPE="ext4"' || mkfs.ext4 -F -L data /dev/mmcblk0p7
 
 EXTROOT_UUID="$(blkid -s UUID -o value /dev/mmcblk0p6)"
 DATA_UUID="$(blkid -s UUID -o value /dev/mmcblk0p7)"
@@ -247,52 +230,36 @@ uci commit fstab
 
 mount /dev/mmcblk0p6 /mnt/extroot
 mount /dev/mmcblk0p7 /mnt/data
+
+# 把当前 overlay 内容复制到 extroot
 log "copying current overlay to new extroot"
 tar -C /overlay -cpf - . | tar -C /mnt/extroot -xpf -
+mkdir -p /mnt/extroot/etc/config
+cp -f /etc/config/fstab /mnt/extroot/etc/config/fstab
 
-touch /etc/.extroot_emmc_done
-touch /mnt/extroot/etc/.extroot_emmc_done
+# 避免重复执行
+mkdir -p /mnt/extroot/etc
+: > /etc/.extroot_emmc_done
+: > /mnt/extroot/etc/.extroot_emmc_done
 rm -f "/etc/uci-defaults/$SCRIPT_NAME"
 rm -f "/mnt/extroot/etc/uci-defaults/$SCRIPT_NAME"
 
 sync
 umount /mnt/extroot || true
 umount /mnt/data || true
-
 log "extroot prepared, rebooting"
 reboot
-
 exit 0
-EOFEXTROOT
+EOF_EXTROOT
 
 chmod +x files/etc/uci-defaults/95-emmc-extroot
 chmod +x files/etc/uci-defaults/98-network-optimize
 chmod +x files/etc/uci-defaults/99-custom-setup
 
-# 10. Rust CI 编译修复
+# 11. Rust / CI 兼容性修复
 echo ">>> 修复 Rust 在 GitHub Actions / CI 下的 host 编译问题"
 if [ -f feeds/packages/lang/rust/Makefile ]; then
   sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile
-fi
-
-# 11. 强制修正目标机型，防止 defconfig 跑偏到 openwrt_one
-echo ">>> 强制修正目标机型为 cmcc_rax3000m"
-if [ -f .config ]; then
-  sed -i '/^CONFIG_TARGET_DEVICE_/d' .config
-  sed -i '/^CONFIG_TARGET_PROFILE=/d' .config
-  sed -i '/^CONFIG_TARGET_BOARD=/d' .config
-  sed -i '/^CONFIG_TARGET_SUBTARGET=/d' .config
-
-  sed -i '/^CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one=/d' .config
-  sed -i '/^# CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one is not set/d' .config
-  sed -i '/^CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=/d' .config
-  sed -i '/^# CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m is not set/d' .config
-
-  cat >> .config <<'EOFTARGET'
-CONFIG_TARGET_mediatek=y
-CONFIG_TARGET_mediatek_filogic=y
-CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=y
-EOFTARGET
 fi
 
 echo "===== diy-part2.sh 执行完成 ====="
