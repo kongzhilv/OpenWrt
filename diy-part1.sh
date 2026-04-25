@@ -20,21 +20,13 @@ src-git small https://github.com/kenzok8/small
 EOF_FEEDS
 
 # 3. 正确接入 fantastic-packages
-# 注意：不能只把整个仓库扔到 package/ 下然后指望所有子目录都被识别。
-# fantastic-packages 实际目录是 fantastic_packages/packages 和 fantastic_packages/luci。
-echo ">>> 克隆 fantastic-packages 并以 src-link 方式接入"
-rm -rf fantastic_packages 2>/dev/null || true
-git clone --depth 1 --branch master --single-branch --no-tags --recurse-submodules \
-  https://github.com/fantastic-packages/packages.git fantastic_packages
-
-(
-  cd fantastic_packages
-  git submodule update --init --recursive
-)
-
+# 当前 fantastic-packages README 推荐:
+#   src-git --root=feeds fantastic_packages https://github.com/fantastic-packages/packages.git;master
+# 这样 scripts/feeds 会按它仓库内 feeds/ 结构生成 packages/luci/special，
+# 能正确识别 luci-app-diskman 和 luci-app-temp-status。
+echo ">>> 写入 fantastic-packages feed"
 cat >> feeds.conf.default <<'EOF_FEEDS'
-src-link fantastic_packages_packages fantastic_packages/packages
-src-link fantastic_packages_luci fantastic_packages/luci
+src-git --root=feeds fantastic_packages https://github.com/fantastic-packages/packages.git;master
 EOF_FEEDS
 
 echo "===== diy-part1.sh 执行完成 ====="
