@@ -20,8 +20,8 @@ src-git small https://github.com/kenzok8/small
 EOF_FEEDS
 
 # 3. 正确接入 fantastic-packages
-# fantastic-packages README 推荐方式：
-# 先 clone，再通过 src-link 接入 fantastic_packages/feeds/packages、feeds/luci、feeds/special
+# 先 clone 到 OpenWrt 源码根目录，再用 src-link 指向它内部的 feeds 子目录。
+# 这样可以识别 luci-app-diskman / luci-app-temp-status。
 echo ">>> 克隆 fantastic-packages"
 rm -rf fantastic_packages 2>/dev/null || true
 git clone --branch master --single-branch --no-tags --recurse-submodules \
