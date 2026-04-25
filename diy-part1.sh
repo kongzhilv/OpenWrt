@@ -20,8 +20,6 @@ src-git small https://github.com/kenzok8/small
 EOF_FEEDS
 
 # 3. 正确接入 fantastic-packages
-# 先 clone 到 OpenWrt 源码根目录，再用 src-link 指向它内部的 feeds 子目录。
-# 这样可以识别 luci-app-diskman / luci-app-temp-status。
 echo ">>> 克隆 fantastic-packages"
 rm -rf fantastic_packages 2>/dev/null || true
 git clone --branch master --single-branch --no-tags --recurse-submodules \
@@ -32,11 +30,21 @@ git clone --branch master --single-branch --no-tags --recurse-submodules \
   git submodule update --init --recursive
 )
 
-echo ">>> 以 src-link 方式接入 fantastic-packages"
-cat >> feeds.conf.default <<'EOF_FEEDS'
-src-link fantastic_packages_packages fantastic_packages/feeds/packages
-src-link fantastic_packages_luci fantastic_packages/feeds/luci
-src-link fantastic_packages_special fantastic_packages/feeds/special
+# 关键点：src-link 使用绝对路径
+FP_ROOT="$(pwd)/fantastic_packages"
+
+echo ">>> 以绝对路径 src-link 方式接入 fantastic-packages"
+cat >> feeds.conf.default <<EOF_FEEDS
+src-link fantastic_packages_packages ${FP_ROOT}/feeds/packages
+src-link fantastic_packages_luci ${FP_ROOT}/feeds/luci
+src-link fantastic_packages_special ${FP_ROOT}/feeds/special
 EOF_FEEDS
+
+echo "===== 当前 feeds.conf.default ====="
+cat feeds.conf.default
+
+echo "===== 检查 fantastic-packages 关键目录 ====="
+ls -ld "${FP_ROOT}/feeds/packages" "${FP_ROOT}/feeds/luci" "${FP_ROOT}/feeds/special" || true
+ls -ld "${FP_ROOT}/luci/luci-app-diskman" "${FP_ROOT}/luci/luci-app-temp-status" || true
 
 echo "===== diy-part1.sh 执行完成 ====="
