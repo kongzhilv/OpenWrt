@@ -2,17 +2,22 @@
 # 描述: 官方 OpenWrt + GitHub Actions 稳定自定义脚本
 # 目标:
 # - 合并仓库根目录 files/ 到 openwrt/files/
+# - 默认 IP: 192.168.2.1
+# - 默认中文 + Argon 主题
+# - 默认开启无密码开放 WiFi
 # - 温度显示: luci-app-temp-status
 # - DiskMan: luci-app-diskman
 # - 网页终端: luci-app-ttyd
 # - OpenList: OpenListTeam/OpenList-OpenWRT
 # - Turbo ACC: luci-app-turboacc，可提供软件流量分载、Shortcut-FE、全锥形 NAT、BBR 等
 # - eMMC extroot: 首次启动自动切换到 mmcblk0p6，目标约 1GiB overlay
+
 set -e
 
 echo "===== 开始执行 diy-part2.sh ====="
 
-# 0. 先合并仓库根目录 files/，后续本脚本生成的文件会覆盖同路径旧文件
+# 0. 合并仓库根目录 files/ 到 openwrt/files/
+# 后续本脚本生成的文件会覆盖同路径旧文件
 echo ">>> 合并仓库根目录 files/ 到 openwrt/files/"
 mkdir -p files
 if [ -n "${GITHUB_WORKSPACE:-}" ] && [ -d "$GITHUB_WORKSPACE/files" ]; then
@@ -123,7 +128,15 @@ if [ -f .config ]; then
     luci-app-temp-status \
     ttyd luci-app-ttyd luci-i18n-ttyd-zh-cn \
     luci-app-argon-config \
-    luci-app-turboacc kmod-nft-offload
+    luci-app-turboacc kmod-nft-offload \
+    kmod-usb-net kmod-usb-net-rndis kmod-usb-net-cdc-ether \
+    kmod-usb-net-cdc-eem kmod-usb-net-cdc-subset \
+    kmod-usb-net-cdc-ncm kmod-usb-net-huawei-cdc-ncm \
+    kmod-usb-net-cdc-mbim kmod-usb-net-qmi-wwan kmod-usb-wdm \
+    kmod-usb-net-rtl8152 kmod-usb-net-asix kmod-usb-net-asix-ax88179 \
+    kmod-usb-net-aqc111 kmod-usb-net-lan78xx kmod-usb-net-smsc95xx \
+    kmod-usb-net-ipheth usbmuxd libimobiledevice usbutils usb-modeswitch \
+    kmod-usb-serial kmod-usb-serial-option kmod-usb-serial-wwan kmod-usb-acm
   do
     sed -i "/^CONFIG_PACKAGE_${p}=/d" .config
     sed -i "/^# CONFIG_PACKAGE_${p} is not set/d" .config
@@ -133,22 +146,69 @@ if [ -f .config ]; then
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
 CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=y
+
+# 禁用冲突包
 # CONFIG_PACKAGE_adguardhome is not set
 # CONFIG_PACKAGE_luci-app-adguardhome is not set
 # CONFIG_PACKAGE_openlist2 is not set
 # CONFIG_PACKAGE_luci-app-openlist2 is not set
+
+# OpenList
 CONFIG_PACKAGE_openlist=y
 CONFIG_PACKAGE_luci-app-openlist=y
 CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y
+
+# DiskMan / 温度 / ttyd
 CONFIG_PACKAGE_luci-app-diskman=y
 CONFIG_PACKAGE_luci-i18n-diskman-zh-cn=y
 CONFIG_PACKAGE_luci-app-temp-status=y
 CONFIG_PACKAGE_ttyd=y
 CONFIG_PACKAGE_luci-app-ttyd=y
 CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
+
+# Argon 配置
 CONFIG_PACKAGE_luci-app-argon-config=y
+
+# Turbo ACC
 CONFIG_PACKAGE_luci-app-turboacc=y
 CONFIG_PACKAGE_kmod-nft-offload=y
+
+# USB 网络基础
+CONFIG_PACKAGE_kmod-usb-net=y
+
+# 手机 USB 共享 / RNDIS / CDC Ethernet
+CONFIG_PACKAGE_kmod-usb-net-rndis=y
+CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
+CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y
+CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
+
+# NCM / MBIM / QMI 4G/5G 网卡常用
+CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
+CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y
+CONFIG_PACKAGE_kmod-usb-net-cdc-mbim=y
+CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
+CONFIG_PACKAGE_kmod-usb-wdm=y
+
+# USB 转千兆网卡常见芯片
+CONFIG_PACKAGE_kmod-usb-net-rtl8152=y
+CONFIG_PACKAGE_kmod-usb-net-asix=y
+CONFIG_PACKAGE_kmod-usb-net-asix-ax88179=y
+CONFIG_PACKAGE_kmod-usb-net-aqc111=y
+CONFIG_PACKAGE_kmod-usb-net-lan78xx=y
+CONFIG_PACKAGE_kmod-usb-net-smsc95xx=y
+
+# iPhone USB 共享网络
+CONFIG_PACKAGE_kmod-usb-net-ipheth=y
+CONFIG_PACKAGE_usbmuxd=y
+CONFIG_PACKAGE_libimobiledevice=y
+CONFIG_PACKAGE_usbutils=y
+
+# USB 串口 / 模式切换，给 4G 模块备用
+CONFIG_PACKAGE_usb-modeswitch=y
+CONFIG_PACKAGE_kmod-usb-serial=y
+CONFIG_PACKAGE_kmod-usb-serial-option=y
+CONFIG_PACKAGE_kmod-usb-serial-wwan=y
+CONFIG_PACKAGE_kmod-usb-acm=y
 EOF_CONFIG
 fi
 
@@ -164,6 +224,49 @@ uci -q set luci.main.mediaurlbase='/luci-static/argon'
 uci commit luci
 exit 0
 EOF_UCI
+
+# 9.1 首次开机：默认开启无密码 WiFi
+echo ">>> 写入首次开机 WiFi 默认开启配置，无密码开放网络"
+
+cat << 'EOF_WIFI' > files/etc/uci-defaults/97-enable-wifi
+#!/bin/sh
+
+# 如果 wireless 配置不存在，先生成
+[ -f /etc/config/wireless ] || wifi config
+
+# 开启所有 radio
+for dev in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-device/\1/p"); do
+    uci -q set "${dev}.disabled='0'"
+    uci -q set "${dev}.country='CN'"
+done
+
+# 开启所有 wifi-iface，并设置为无密码开放 WiFi
+i=0
+for iface in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-iface/\1/p"); do
+    uci -q set "${iface}.disabled='0'"
+    uci -q set "${iface}.mode='ap'"
+    uci -q set "${iface}.network='lan'"
+    uci -q set "${iface}.encryption='none'"
+    uci -q delete "${iface}.key"
+
+    if [ "$i" = "0" ]; then
+        uci -q set "${iface}.ssid='OpenWrt-2G'"
+    elif [ "$i" = "1" ]; then
+        uci -q set "${iface}.ssid='OpenWrt-5G'"
+    else
+        uci -q set "${iface}.ssid='OpenWrt-WiFi-$i'"
+    fi
+
+    i=$((i + 1))
+done
+
+uci commit wireless
+
+# 首次启动时立即尝试生效
+wifi reload || wifi up || /etc/init.d/network reload
+
+exit 0
+EOF_WIFI
 
 # 10. BBR 默认配置
 echo ">>> 写入 BBR 默认配置"
@@ -293,11 +396,13 @@ cat << 'EOF_EXTROOT_UCI' > files/etc/uci-defaults/05-emmc-extroot
 exit 0
 EOF_EXTROOT_UCI
 
+# 13. 脚本权限
 chmod +x files/etc/uci-defaults/05-emmc-extroot
+chmod +x files/etc/uci-defaults/97-enable-wifi
 chmod +x files/etc/uci-defaults/98-network-optimize
 chmod +x files/etc/uci-defaults/99-custom-setup
 
-# 13. Rust / CI 兼容性修复
+# 14. Rust / CI 兼容性修复
 echo ">>> 修复 Rust 在 GitHub Actions / CI 下的 host 编译问题"
 if [ -f feeds/packages/lang/rust/Makefile ]; then
   sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile
