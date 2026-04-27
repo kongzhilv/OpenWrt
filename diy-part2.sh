@@ -5,12 +5,18 @@
 # - 默认 IP: 192.168.2.1
 # - 默认中文 + Argon 主题
 # - 默认开启无密码开放 WiFi
+# - 5G 默认固定 36 信道 + HE80，避免 auto/HE160 触发 ACS/DFS 导致 5G 看起来被禁用
 # - 温度显示: luci-app-temp-status
 # - DiskMan: luci-app-diskman
 # - 网页终端: luci-app-ttyd
 # - OpenList: OpenListTeam/OpenList-OpenWRT
 # - Turbo ACC: luci-app-turboacc，可提供软件流量分载、Shortcut-FE、全锥形 NAT、BBR 等
 # - eMMC extroot: 首次启动自动切换到 mmcblk0p6，目标约 1GiB overlay
+#
+# 注意:
+# - 本脚本不再内置 factory_fixed.bin
+# - 本脚本不再自动写 /dev/mmcblk0p2
+# - 适用于 factory 已经修好的那台 RAX3000M
 
 set -e
 
@@ -236,6 +242,10 @@ mkdir -p files/etc/uci-defaults
 mkdir -p files/etc/sysctl.d
 mkdir -p files/usr/sbin
 
+# 清理旧名称，避免 files/ 里残留旧脚本导致执行顺序错误
+rm -f files/etc/uci-defaults/05-emmc-extroot 2>/dev/null || true
+rm -f files/etc/uci-defaults/97-enable-wifi 2>/dev/null || true
+
 cat << 'EOF_UCI' > files/etc/uci-defaults/99-custom-setup
 #!/bin/sh
 
@@ -247,7 +257,7 @@ exit 0
 EOF_UCI
 
 # 9.1 首次开机：默认开启无密码 WiFi
-echo ">>> 写入首次开机 WiFi 默认开启配置，无密码开放网络"
+echo ">>> 写入首次开机 WiFi 默认开启配置，无密码开放网络，5G 固定 36 + HE80"
 
 cat << 'EOF_WIFI' > files/etc/uci-defaults/01-enable-wifi
 #!/bin/sh
@@ -264,10 +274,21 @@ uci show wireless 2>/dev/null | grep -q '=wifi-device' || {
     exit 1
 }
 
-# 开启所有 radio
+# 开启所有 radio，并固定信道
+# 重点：5G 不用 auto + HE160，避免 ACS/DFS 导致 5G 显示禁用或开机等待很久
 for dev in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-device/\1/p"); do
     uci -q set "${dev}.disabled=0"
     uci -q set "${dev}.country=CN"
+
+    band="$(uci -q get "${dev}.band" || true)"
+
+    if [ "$band" = "2g" ]; then
+        uci -q set "${dev}.channel=1"
+        uci -q set "${dev}.htmode=HE40"
+    elif [ "$band" = "5g" ]; then
+        uci -q set "${dev}.channel=36"
+        uci -q set "${dev}.htmode=HE80"
+    fi
 done
 
 # 开启所有 wifi-iface，并设置为 AP + LAN + 无密码开放
@@ -280,10 +301,17 @@ for iface in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-iface/\1/
     uci -q set "${iface}.encryption=none"
     uci -q delete "${iface}.key"
 
-    if [ "$i" = "0" ]; then
-        uci -q set "${iface}.ssid=OpenWrt-2G"
+    dev="$(uci -q get "${iface}.device" || true)"
+    band="$(uci -q get "wireless.${dev}.band" || true)"
+
+    if [ "$band" = "2g" ]; then
+        uci -q set "${iface}.ssid=OpenWrt_2"
+    elif [ "$band" = "5g" ]; then
+        uci -q set "${iface}.ssid=OpenWrt_5"
+    elif [ "$i" = "0" ]; then
+        uci -q set "${iface}.ssid=OpenWrt_2"
     elif [ "$i" = "1" ]; then
-        uci -q set "${iface}.ssid=OpenWrt-5G"
+        uci -q set "${iface}.ssid=OpenWrt_5"
     else
         uci -q set "${iface}.ssid=OpenWrt-WiFi-$i"
     fi
