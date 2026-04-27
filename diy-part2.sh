@@ -14,14 +14,15 @@
 # - eMMC extroot: 首次启动自动切换到 mmcblk0p6，目标约 1GiB overlay
 #
 # 注意:
-# - 本脚本不内置 factory_fixed.bin
+# - 本脚本不内置 factory 文件
 # - 本脚本不自动写 /dev/mmcblk0p2
-# - factory 已经手动修好的机器，不需要再编译进 factory
+# - 适用于 factory 已经手动修好的 RAX3000M
 # - extroot 部分已修复:
-#   1. 强制 mount -t ext4
-#   2. 直接写完整 /etc/config/fstab
-#   3. 复制 fstab 到 /mnt/extroot/etc/config/fstab
-#   4. 保证 99-emmc-extroot 最后执行，避免提前 reboot 打断 WiFi 配置
+#   1. 首次初始化强制格式化 /dev/mmcblk0p6，避免旧 overlay / 旧密码复活
+#   2. 强制 mount -t ext4
+#   3. 直接写完整 /etc/config/fstab
+#   4. 复制 fstab 到 /mnt/extroot/etc/config/fstab
+#   5. 99-emmc-extroot 最后执行，避免提前 reboot 打断 WiFi 配置
 
 set -e
 
@@ -376,6 +377,10 @@ set -eu
 LOGTAG="emmc-extroot"
 LOGFILE="/tmp/emmc-extroot.log"
 
+# 1 = 首次初始化时强制格式化 p6，避免继承旧 overlay/旧密码
+# 0 = 如果 p6 已经是 ext4，则保留旧内容
+CLEAN_EXTROOT="${CLEAN_EXTROOT:-1}"
+
 log() {
     echo "$LOGTAG: $*" | tee -a "$LOGFILE"
     logger -t "$LOGTAG" "$*"
@@ -416,7 +421,7 @@ command -v blkid >/dev/null 2>&1 || {
 umount /mnt/extroot 2>/dev/null || true
 umount /mnt/data 2>/dev/null || true
 
-# 只有 p7 不存在时才重新分区，避免每次启动清空已有 extroot/data
+# 只有 p7 不存在时才重新分区，避免每次启动都动分区表
 if [ ! -b /dev/mmcblk0p7 ]; then
     log "repartitioning /dev/mmcblk0: p6=1GiB extroot, p7=rest data"
 
@@ -433,20 +438,28 @@ if [ ! -b /dev/mmcblk0p7 ]; then
 fi
 
 [ -b /dev/mmcblk0p6 ] || {
-    log "/dev/mmcblk0p6 not found after partition"
+    log "/dev/mmcblk0p6 not found"
     exit 1
 }
 
 [ -b /dev/mmcblk0p7 ] || {
-    log "/dev/mmcblk0p7 not found after partition"
+    log "/dev/mmcblk0p7 not found"
     exit 1
 }
 
-block info /dev/mmcblk0p6 | grep -q 'TYPE="ext4"' || {
-    log "formatting /dev/mmcblk0p6"
+# 关键：干净 extroot 模式，强制格式化 p6
+# 这会清掉 p6 里以前残留的旧 overlay、旧密码、旧配置
+if [ "$CLEAN_EXTROOT" = "1" ]; then
+    log "clean extroot enabled, formatting /dev/mmcblk0p6 to remove stale overlay"
     mkfs.ext4 -F -L extroot /dev/mmcblk0p6
-}
+else
+    block info /dev/mmcblk0p6 | grep -q 'TYPE="ext4"' || {
+        log "formatting /dev/mmcblk0p6"
+        mkfs.ext4 -F -L extroot /dev/mmcblk0p6
+    }
+fi
 
+# p7 是 data 分区，不强制清空；只有不是 ext4 时才格式化
 block info /dev/mmcblk0p7 | grep -q 'TYPE="ext4"' || {
     log "formatting /dev/mmcblk0p7"
     mkfs.ext4 -F -L data /dev/mmcblk0p7
@@ -467,7 +480,6 @@ DATA_UUID="$(blkid -s UUID -o value /dev/mmcblk0p7)"
 
 log "writing /etc/config/fstab"
 
-# 直接写完整 fstab，避免系统里没有 fstab section 时 uci 写入不完整
 cat > /etc/config/fstab <<EOF_FSTAB
 config global
 	option anon_swap '0'
@@ -496,13 +508,13 @@ EOF_FSTAB
 
 log "mounting extroot/data as ext4"
 
-# 关键修复：必须指定 -t ext4，避免 mount 自动识别跑去按 NTFS 挂载
+# 关键：强制指定 ext4，避免 mount 自动识别跑去按 NTFS 挂载
 mount -t ext4 /dev/mmcblk0p6 /mnt/extroot
 mount -t ext4 /dev/mmcblk0p7 /mnt/data
 
-log "copying current overlay to new extroot"
+log "copying current overlay to clean extroot"
 
-# 每次初始化都同步当前 overlay，确保 fstab 被复制进去
+# 此时 p6 已经是干净 ext4，所以不会继承旧密码/旧配置
 tar -C /overlay -cpf - . | tar -C /mnt/extroot -xpf -
 
 mkdir -p /mnt/extroot/etc/config
