@@ -14,9 +14,14 @@
 # - eMMC extroot: 首次启动自动切换到 mmcblk0p6，目标约 1GiB overlay
 #
 # 注意:
-# - 本脚本不再内置 factory_fixed.bin
-# - 本脚本不再自动写 /dev/mmcblk0p2
-# - 适用于 factory 已经修好的那台 RAX3000M
+# - 本脚本不内置 factory_fixed.bin
+# - 本脚本不自动写 /dev/mmcblk0p2
+# - factory 已经手动修好的机器，不需要再编译进 factory
+# - extroot 部分已修复:
+#   1. 强制 mount -t ext4
+#   2. 直接写完整 /etc/config/fstab
+#   3. 复制 fstab 到 /mnt/extroot/etc/config/fstab
+#   4. 保证 99-emmc-extroot 最后执行，避免提前 reboot 打断 WiFi 配置
 
 set -e
 
@@ -152,6 +157,7 @@ if [ -f .config ]; then
         ttyd luci-app-ttyd luci-i18n-ttyd-zh-cn \
         luci-app-argon-config \
         luci-app-turboacc kmod-nft-offload \
+        block-mount e2fsprogs parted blkid kmod-fs-ext4 \
         kmod-usb-net kmod-usb-net-rndis kmod-usb-net-cdc-ether \
         kmod-usb-net-cdc-eem kmod-usb-net-cdc-subset \
         kmod-usb-net-cdc-ncm kmod-usb-net-huawei-cdc-ncm \
@@ -195,6 +201,13 @@ CONFIG_PACKAGE_luci-app-argon-config=y
 # Turbo ACC
 CONFIG_PACKAGE_luci-app-turboacc=y
 CONFIG_PACKAGE_kmod-nft-offload=y
+
+# eMMC extroot 必需
+CONFIG_PACKAGE_block-mount=y
+CONFIG_PACKAGE_e2fsprogs=y
+CONFIG_PACKAGE_parted=y
+CONFIG_PACKAGE_blkid=y
+CONFIG_PACKAGE_kmod-fs-ext4=y
 
 # USB 网络基础
 CONFIG_PACKAGE_kmod-usb-net=y
@@ -403,18 +416,31 @@ command -v blkid >/dev/null 2>&1 || {
 umount /mnt/extroot 2>/dev/null || true
 umount /mnt/data 2>/dev/null || true
 
+# 只有 p7 不存在时才重新分区，避免每次启动清空已有 extroot/data
 if [ ! -b /dev/mmcblk0p7 ]; then
     log "repartitioning /dev/mmcblk0: p6=1GiB extroot, p7=rest data"
 
+    parted -s /dev/mmcblk0 rm 7 || true
     parted -s /dev/mmcblk0 rm 6 || true
+
     parted -s /dev/mmcblk0 mkpart primary ext4 512MiB 1536MiB
     parted -s /dev/mmcblk0 name 6 extroot
     parted -s /dev/mmcblk0 mkpart primary ext4 1536MiB 100%
     parted -s /dev/mmcblk0 name 7 data
 
     partprobe /dev/mmcblk0 || true
-    sleep 2
+    sleep 3
 fi
+
+[ -b /dev/mmcblk0p6 ] || {
+    log "/dev/mmcblk0p6 not found after partition"
+    exit 1
+}
+
+[ -b /dev/mmcblk0p7 ] || {
+    log "/dev/mmcblk0p7 not found after partition"
+    exit 1
+}
 
 block info /dev/mmcblk0p6 | grep -q 'TYPE="ext4"' || {
     log "formatting /dev/mmcblk0p6"
@@ -441,34 +467,43 @@ DATA_UUID="$(blkid -s UUID -o value /dev/mmcblk0p7)"
 
 log "writing /etc/config/fstab"
 
-uci -q delete fstab.extroot || true
-uci set fstab.extroot='mount'
-uci set fstab.extroot.target='/overlay'
-uci set fstab.extroot.uuid="$EXTROOT_UUID"
-uci set fstab.extroot.fstype='ext4'
-uci set fstab.extroot.enabled='1'
-uci set fstab.extroot.enabled_fsck='1'
+# 直接写完整 fstab，避免系统里没有 fstab section 时 uci 写入不完整
+cat > /etc/config/fstab <<EOF_FSTAB
+config global
+	option anon_swap '0'
+	option anon_mount '0'
+	option auto_swap '1'
+	option auto_mount '1'
+	option delay_root '5'
+	option check_fs '1'
 
-uci -q delete fstab.data || true
-uci set fstab.data='mount'
-uci set fstab.data.target='/mnt/data'
-uci set fstab.data.uuid="$DATA_UUID"
-uci set fstab.data.fstype='ext4'
-uci set fstab.data.enabled='1'
-uci set fstab.data.enabled_fsck='1'
+config mount 'extroot'
+	option target '/overlay'
+	option uuid '$EXTROOT_UUID'
+	option fstype 'ext4'
+	option enabled '1'
+	option enabled_fsck '1'
 
-uci commit fstab
+config mount 'data'
+	option target '/mnt/data'
+	option uuid '$DATA_UUID'
+	option fstype 'ext4'
+	option enabled '1'
+	option enabled_fsck '1'
+EOF_FSTAB
 
 /etc/init.d/fstab enable
 
-mount /dev/mmcblk0p6 /mnt/extroot
-mount /dev/mmcblk0p7 /mnt/data
+log "mounting extroot/data as ext4"
 
-if [ ! -e /mnt/extroot/etc/.extroot_emmc_done ]; then
-    log "copying current overlay to new extroot"
+# 关键修复：必须指定 -t ext4，避免 mount 自动识别跑去按 NTFS 挂载
+mount -t ext4 /dev/mmcblk0p6 /mnt/extroot
+mount -t ext4 /dev/mmcblk0p7 /mnt/data
 
-    tar -C /overlay -cpf - . | tar -C /mnt/extroot -xpf -
-fi
+log "copying current overlay to new extroot"
+
+# 每次初始化都同步当前 overlay，确保 fstab 被复制进去
+tar -C /overlay -cpf - . | tar -C /mnt/extroot -xpf -
 
 mkdir -p /mnt/extroot/etc/config
 cp -f /etc/config/fstab /mnt/extroot/etc/config/fstab
