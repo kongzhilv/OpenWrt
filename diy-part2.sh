@@ -12,14 +12,14 @@
 # - OpenList: OpenListTeam/OpenList-OpenWRT
 # - Turbo ACC: luci-app-turboacc，可提供软件流量分载、Shortcut-FE、全锥形 NAT、BBR 等
 # - eMMC extroot: 首次启动自动切换到 mmcblk0p6，目标约 1GiB overlay
-# - F50 USB 网卡: 开机检测不到时自动软重置 xhci-mtk 11200000.usb，并按 MAC 自动绑定 F50/F50_v6
+# - F50 USB 网卡: 使用 f50-usb-guardian，提前启动 + 长期守护 + hotplug 自动绑定
 #
 # 注意:
 # - 本脚本不内置 factory 文件
 # - 本脚本不自动写 /dev/mmcblk0p2
 # - 适用于 factory 已经手动修好的 RAX3000M
-# - extroot 首次初始化会格式化 /dev/mmcblk0p6，避免旧 overlay / 旧密码复活
-# - 不会格式化 /dev/mmcblk0p7，p7 作为 data 分区保留
+# - extroot 首次初始化强制格式化 /dev/mmcblk0p6，避免旧 overlay / 旧密码 / 旧脚本复活
+# - 不再集成 ipheth/usbmuxd/libimobiledevice/usb-modeswitch，先排除它们对 F50 冷启动枚举的干扰
 
 set -e
 
@@ -207,7 +207,7 @@ CONFIG_PACKAGE_kmod-fs-ext4=y
 # USB 网络基础
 CONFIG_PACKAGE_kmod-usb-net=y
 
-# 手机 USB 共享 / RNDIS / CDC Ethernet
+# F50 / RNDIS / CDC Ethernet
 CONFIG_PACKAGE_kmod-usb-net-rndis=y
 CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
 CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y
@@ -228,14 +228,15 @@ CONFIG_PACKAGE_kmod-usb-net-aqc111=y
 CONFIG_PACKAGE_kmod-usb-net-lan78xx=y
 CONFIG_PACKAGE_kmod-usb-net-smsc95xx=y
 
-# iPhone USB 共享网络
-CONFIG_PACKAGE_kmod-usb-net-ipheth=y
-CONFIG_PACKAGE_usbmuxd=y
-CONFIG_PACKAGE_libimobiledevice=y
+# 不再集成 iPhone/usbmuxd/usb-modeswitch，先排除对 F50 冷启动枚举的干扰
+# CONFIG_PACKAGE_kmod-usb-net-ipheth is not set
+# CONFIG_PACKAGE_usbmuxd is not set
+# CONFIG_PACKAGE_libimobiledevice is not set
+# CONFIG_PACKAGE_usb-modeswitch is not set
+
 CONFIG_PACKAGE_usbutils=y
 
-# USB 串口 / 模式切换，给 4G 模块备用
-CONFIG_PACKAGE_usb-modeswitch=y
+# USB 串口，给 4G/5G 模块备用
 CONFIG_PACKAGE_kmod-usb-serial=y
 CONFIG_PACKAGE_kmod-usb-serial-option=y
 CONFIG_PACKAGE_kmod-usb-serial-wwan=y
@@ -251,10 +252,17 @@ mkdir -p files/etc/sysctl.d
 mkdir -p files/usr/sbin
 mkdir -p files/etc/init.d
 mkdir -p files/etc/hotplug.d/net
+mkdir -p files/etc/hotplug.d/usb
 
 # 清理旧名称，避免 files/ 里残留旧脚本导致执行顺序错误
 rm -f files/etc/uci-defaults/05-emmc-extroot 2>/dev/null || true
 rm -f files/etc/uci-defaults/97-enable-wifi 2>/dev/null || true
+
+# 清理旧 F50 修复脚本
+rm -f files/usr/sbin/f50-usb-fix 2>/dev/null || true
+rm -f files/etc/init.d/f50-usb-fix 2>/dev/null || true
+rm -f files/etc/uci-defaults/96-enable-f50-usb-fix 2>/dev/null || true
+rm -f files/etc/hotplug.d/net/20-f50-usb-fix 2>/dev/null || true
 
 cat << 'EOF_UCI' > files/etc/uci-defaults/99-custom-setup
 #!/bin/sh
@@ -330,29 +338,52 @@ logger -t enable-wifi "wifi config written successfully"
 exit 0
 EOF_WIFI
 
-# 9.2 F50 USB 网卡冷启动修复
-echo ">>> 写入 F50 USB 网卡冷启动修复脚本"
+# 9.2 F50 USB 网卡长期守护
+echo ">>> 写入 F50 USB 长期守护修复脚本"
 
-cat << 'EOF_F50_USB_FIX' > files/usr/sbin/f50-usb-fix
+cat << 'EOF_F50_GUARDIAN' > files/usr/sbin/f50-usb-guardian
 #!/bin/sh
 
-LOGTAG="f50-usb-fix"
+LOGTAG="f50-usb"
 F50_MAC="${F50_MAC:-b8:d4:bc:9f:37:bd}"
+F50_NAME="${F50_NAME:-f50usb0}"
 XHCI_DEV="${XHCI_DEV:-11200000.usb}"
-MODE="${1:-full}"
-LOCKFILE="/tmp/f50-usb-fix.lock"
+LOCKFILE="/tmp/f50-usb-guardian.lock"
 
 log() {
     logger -t "$LOGTAG" "$*"
     echo "$LOGTAG: $*"
 }
 
+lock_me() {
+    if command -v lock >/dev/null 2>&1; then
+        lock -n "$LOCKFILE" || exit 0
+    fi
+}
+
+unlock_me() {
+    if command -v lock >/dev/null 2>&1; then
+        lock -u "$LOCKFILE" || true
+    fi
+}
+
+is_bad_dev() {
+    case "$1" in
+        lo|br-lan|eth0|eth1|lan1|lan2|lan3|docker0|phy0-ap0|phy1-ap0|phy0-sta0|phy1-sta0)
+            return 0
+        ;;
+    esac
+
+    return 1
+}
+
 find_dev_by_mac() {
     for n in /sys/class/net/*; do
         dev="$(basename "$n")"
-        [ "$dev" = "lo" ] && continue
+        is_bad_dev "$dev" && continue
 
         mac="$(cat "$n/address" 2>/dev/null || true)"
+
         if [ "$mac" = "$F50_MAC" ]; then
             echo "$dev"
             return 0
@@ -362,18 +393,70 @@ find_dev_by_mac() {
     return 1
 }
 
-bind_f50_network() {
+find_usb_netdev() {
+    for n in /sys/class/net/*; do
+        dev="$(basename "$n")"
+        is_bad_dev "$dev" && continue
+
+        path="$(readlink -f "$n/device" 2>/dev/null || true)"
+        mac="$(cat "$n/address" 2>/dev/null || true)"
+
+        case "$path" in
+            *usb*)
+                [ -n "$mac" ] && [ "$mac" != "00:00:00:00:00:00" ] && {
+                    echo "$dev"
+                    return 0
+                }
+            ;;
+        esac
+    done
+
+    return 1
+}
+
+usb_seen() {
+    command -v lsusb >/dev/null 2>&1 || return 1
+
+    lsusb 2>/dev/null | grep -Eiq '19d2|Unisoc|F50|ZTE'
+}
+
+rename_to_f50usb0() {
+    DEV="$1"
+
+    [ "$DEV" = "$F50_NAME" ] && {
+        echo "$DEV"
+        return 0
+    }
+
+    [ -e "/sys/class/net/$F50_NAME" ] && {
+        echo "$F50_NAME"
+        return 0
+    }
+
+    ip link set dev "$DEV" down 2>/dev/null || true
+
+    if ip link set dev "$DEV" name "$F50_NAME" 2>/dev/null; then
+        echo "$F50_NAME"
+        return 0
+    fi
+
+    echo "$DEV"
+    return 0
+}
+
+bind_network() {
     DEV="$(find_dev_by_mac || true)"
 
+    [ -n "$DEV" ] || DEV="$(find_usb_netdev || true)"
+
     [ -n "$DEV" ] || {
-        log "F50 USB NIC not found by MAC $F50_MAC"
+        usb_seen && log "F50 USB device seems visible in lsusb, but no netdev yet"
         return 1
     }
 
-    OLD4="$(uci -q get network.F50.device || true)"
-    OLD6="$(uci -q get network.F50_v6.device || true)"
+    DEV="$(rename_to_f50usb0 "$DEV")"
 
-    log "found F50 USB NIC: dev=$DEV mac=$F50_MAC old4=$OLD4 old6=$OLD6"
+    log "bind F50 network to $DEV"
 
     uci -q set network.F50='interface'
     uci -q set network.F50.proto='dhcp'
@@ -390,25 +473,33 @@ bind_f50_network() {
 
     uci commit network
 
-    if [ "$OLD4" != "$DEV" ] || [ "$OLD6" != "$DEV" ]; then
-        log "F50 device changed, reload network"
-        /etc/init.d/network reload
-        sleep 2
-    else
-        log "F50 device already correct"
-    fi
-
     ifup F50 2>/dev/null || true
     ifup F50_v6 2>/dev/null || true
 
     return 0
 }
 
-wait_and_bind() {
+reset_xhci() {
+    [ -e "/sys/bus/platform/drivers/xhci-mtk/$XHCI_DEV" ] || {
+        log "xhci device $XHCI_DEV not found"
+        return 1
+    }
+
+    log "reset xhci-mtk $XHCI_DEV"
+
+    echo "$XHCI_DEV" > /sys/bus/platform/drivers/xhci-mtk/unbind
+    sleep 3
+    echo "$XHCI_DEV" > /sys/bus/platform/drivers/xhci-mtk/bind
+    sleep 12
+
+    return 0
+}
+
+fast_probe() {
     i=0
 
-    while [ "$i" -lt 10 ]; do
-        bind_f50_network && return 0
+    while [ "$i" -lt 12 ]; do
+        bind_network && return 0
         i=$((i + 1))
         sleep 2
     done
@@ -416,110 +507,144 @@ wait_and_bind() {
     return 1
 }
 
-if command -v lock >/dev/null 2>&1; then
-    lock -n "$LOCKFILE" || exit 0
-fi
+daemon_mode() {
+    log "guardian daemon start"
 
-if [ "$MODE" = "bindonly" ]; then
-    sleep 2
-    bind_f50_network
-    RET="$?"
+    sleep 5
 
-    if command -v lock >/dev/null 2>&1; then
-        lock -u "$LOCKFILE" || true
+    if fast_probe; then
+        log "F50 ready without reset"
+    else
+        r=0
+
+        while [ "$r" -lt 6 ]; do
+            r=$((r + 1))
+
+            log "F50 not ready, reset attempt $r/6"
+            reset_xhci || true
+
+            if fast_probe; then
+                log "F50 ready after reset attempt $r"
+                break
+            fi
+        done
     fi
 
-    exit "$RET"
-fi
-
-log "start full F50 USB fix"
-
-sleep 12
-
-if wait_and_bind; then
-    log "F50 found without USB reset"
-
-    if command -v lock >/dev/null 2>&1; then
-        lock -u "$LOCKFILE" || true
-    fi
-
-    exit 0
-fi
-
-if [ -e "/sys/bus/platform/drivers/xhci-mtk/$XHCI_DEV" ]; then
-    log "F50 not found, reset xhci-mtk $XHCI_DEV"
-
-    echo "$XHCI_DEV" > /sys/bus/platform/drivers/xhci-mtk/unbind
-    sleep 3
-    echo "$XHCI_DEV" > /sys/bus/platform/drivers/xhci-mtk/bind
-    sleep 10
-
-    if wait_and_bind; then
-        log "F50 found after USB reset"
-
-        if command -v lock >/dev/null 2>&1; then
-            lock -u "$LOCKFILE" || true
+    while true; do
+        if bind_network; then
+            sleep 60
+        else
+            log "F50 still absent, low-frequency xhci reset"
+            reset_xhci || true
+            sleep 120
         fi
+    done
+}
 
-        exit 0
-    fi
-else
-    log "xhci-mtk device $XHCI_DEV not found"
-fi
+case "${1:-daemon}" in
+    daemon)
+        lock_me
+        daemon_mode
+        unlock_me
+    ;;
 
-log "F50 still not found"
+    bind)
+        lock_me
+        bind_network
+        RET="$?"
+        unlock_me
+        exit "$RET"
+    ;;
 
-if command -v lock >/dev/null 2>&1; then
-    lock -u "$LOCKFILE" || true
-fi
+    reset)
+        lock_me
+        reset_xhci
+        bind_network || true
+        unlock_me
+    ;;
 
-exit 1
-EOF_F50_USB_FIX
+    *)
+        echo "Usage: $0 {daemon|bind|reset}"
+        exit 1
+    ;;
+esac
 
-chmod +x files/usr/sbin/f50-usb-fix
+exit 0
+EOF_F50_GUARDIAN
 
-cat << 'EOF_F50_INITD' > files/etc/init.d/f50-usb-fix
+chmod +x files/usr/sbin/f50-usb-guardian
+
+cat << 'EOF_F50_INITD' > files/etc/init.d/f50-usb-guardian
 #!/bin/sh /etc/rc.common
 
-START=96
+START=18
 STOP=10
 USE_PROCD=1
 
 start_service() {
     procd_open_instance
-    procd_set_param command /usr/sbin/f50-usb-fix full
+    procd_set_param command /usr/sbin/f50-usb-guardian daemon
     procd_set_param stdout 1
     procd_set_param stderr 1
+    procd_set_param respawn 3600 5 5
     procd_close_instance
 }
 EOF_F50_INITD
 
-chmod +x files/etc/init.d/f50-usb-fix
+chmod +x files/etc/init.d/f50-usb-guardian
 
-cat << 'EOF_F50_ENABLE' > files/etc/uci-defaults/96-enable-f50-usb-fix
-#!/bin/sh
-
-/etc/init.d/f50-usb-fix enable
-
-exit 0
-EOF_F50_ENABLE
-
-chmod +x files/etc/uci-defaults/96-enable-f50-usb-fix
-
-cat << 'EOF_F50_HOTPLUG' > files/etc/hotplug.d/net/20-f50-usb-fix
+cat << 'EOF_F50_HOTPLUG_NET' > files/etc/hotplug.d/net/20-f50-usb-guardian
 #!/bin/sh
 
 [ "$ACTION" = "add" ] || exit 0
 
 (
     sleep 2
-    /usr/sbin/f50-usb-fix bindonly
+    /usr/sbin/f50-usb-guardian bind
 ) &
 
 exit 0
-EOF_F50_HOTPLUG
+EOF_F50_HOTPLUG_NET
 
-chmod +x files/etc/hotplug.d/net/20-f50-usb-fix
+chmod +x files/etc/hotplug.d/net/20-f50-usb-guardian
+
+cat << 'EOF_F50_HOTPLUG_USB' > files/etc/hotplug.d/usb/20-f50-usb-guardian
+#!/bin/sh
+
+case "$ACTION" in
+    add|bind)
+    ;;
+    *)
+        exit 0
+    ;;
+esac
+
+case "$PRODUCT" in
+    19d2/*|*/1353/*)
+        (
+            sleep 3
+            /usr/sbin/f50-usb-guardian bind
+        ) &
+    ;;
+esac
+
+exit 0
+EOF_F50_HOTPLUG_USB
+
+chmod +x files/etc/hotplug.d/usb/20-f50-usb-guardian
+
+cat << 'EOF_F50_ENABLE' > files/etc/uci-defaults/96-enable-f50-usb-guardian
+#!/bin/sh
+
+/etc/init.d/usbmuxd stop 2>/dev/null || true
+/etc/init.d/usbmuxd disable 2>/dev/null || true
+
+/etc/init.d/f50-usb-guardian enable
+
+exit 0
+EOF_F50_ENABLE
+
+chmod +x files/etc/uci-defaults/96-enable-f50-usb-guardian
 
 # 10. BBR 默认配置
 echo ">>> 写入 BBR 默认配置"
@@ -535,7 +660,6 @@ cat << 'EOF_NET' > files/etc/uci-defaults/98-network-optimize
 uci -q set network.globals.packet_steering='1'
 uci commit network
 
-# SQM/CAKE 与硬件 flow offloading 不建议同时开启
 uci -q set firewall.@defaults[0].flow_offloading='0'
 uci -q set firewall.@defaults[0].flow_offloading_hw='0'
 uci commit firewall
@@ -554,8 +678,6 @@ set -eu
 LOGTAG="emmc-extroot"
 LOGFILE="/tmp/emmc-extroot.log"
 
-# 1 = 首次初始化时强制格式化 p6，避免继承旧 overlay/旧密码
-# 0 = 如果 p6 已经是 ext4，则保留旧内容
 CLEAN_EXTROOT="${CLEAN_EXTROOT:-1}"
 
 log() {
@@ -711,7 +833,6 @@ EOF_EXTROOT_BIN
 chmod +x files/usr/sbin/emmc-extroot-setup
 
 # 12. 首次启动自动执行 extroot
-# 注意：必须排在 WiFi/F50/网络优化/主题设置后面，否则 extroot 脚本 reboot 会打断首次配置
 cat << 'EOF_EXTROOT_UCI' > files/etc/uci-defaults/99-emmc-extroot
 #!/bin/sh
 
@@ -724,14 +845,15 @@ EOF_EXTROOT_UCI
 
 # 13. 脚本权限
 chmod +x files/etc/uci-defaults/01-enable-wifi
-chmod +x files/etc/uci-defaults/96-enable-f50-usb-fix
+chmod +x files/etc/uci-defaults/96-enable-f50-usb-guardian
 chmod +x files/etc/uci-defaults/98-network-optimize
 chmod +x files/etc/uci-defaults/99-custom-setup
 chmod +x files/etc/uci-defaults/99-emmc-extroot
-chmod +x files/usr/sbin/f50-usb-fix
+chmod +x files/usr/sbin/f50-usb-guardian
 chmod +x files/usr/sbin/emmc-extroot-setup
-chmod +x files/etc/init.d/f50-usb-fix
-chmod +x files/etc/hotplug.d/net/20-f50-usb-fix
+chmod +x files/etc/init.d/f50-usb-guardian
+chmod +x files/etc/hotplug.d/net/20-f50-usb-guardian
+chmod +x files/etc/hotplug.d/usb/20-f50-usb-guardian
 
 # 14. Rust / CI 兼容性修复
 echo ">>> 修复 Rust 在 GitHub Actions / CI 下的 host 编译问题"
