@@ -181,6 +181,29 @@ jobs:
             grep -q '^CONFIG_PACKAGE_kmod-usb-net-asix-ax88179=y' .config
             grep -q '^CONFIG_PACKAGE_kmod-usb-net-aqc111=y' .config
             grep -q '^CONFIG_PACKAGE_kmod-usb-wdm=y' .config
+            grep -q '^CONFIG_PACKAGE_usbutils=y' .config
+
+            echo "===== 检查不再集成 iPhone/usbmuxd/usb-modeswitch ====="
+
+            if grep -q '^CONFIG_PACKAGE_usbmuxd=y' .config; then
+              echo "错误：不应再集成 usbmuxd"
+              exit 1
+            fi
+
+            if grep -q '^CONFIG_PACKAGE_libimobiledevice=y' .config; then
+              echo "错误：不应再集成 libimobiledevice"
+              exit 1
+            fi
+
+            if grep -q '^CONFIG_PACKAGE_kmod-usb-net-ipheth=y' .config; then
+              echo "错误：不应再集成 ipheth"
+              exit 1
+            fi
+
+            if grep -q '^CONFIG_PACKAGE_usb-modeswitch=y' .config; then
+              echo "错误：F50 稳定前不应再集成 usb-modeswitch"
+              exit 1
+            fi
 
             echo "===== 检查 files 嵌入内容 ====="
 
@@ -196,21 +219,25 @@ jobs:
             echo "===== 当前 files/etc/hotplug.d/net ====="
             ls -lah files/etc/hotplug.d/net || true
 
+            echo "===== 当前 files/etc/hotplug.d/usb ====="
+            ls -lah files/etc/hotplug.d/usb || true
+
             echo "===== 当前 files/etc/sysctl.d ====="
             ls -lah files/etc/sysctl.d || true
 
             test -f files/usr/sbin/emmc-extroot-setup
-            test -f files/usr/sbin/f50-usb-fix
+            test -f files/usr/sbin/f50-usb-guardian
 
-            test -f files/etc/init.d/f50-usb-fix
+            test -f files/etc/init.d/f50-usb-guardian
 
             test -f files/etc/uci-defaults/01-enable-wifi
-            test -f files/etc/uci-defaults/96-enable-f50-usb-fix
+            test -f files/etc/uci-defaults/96-enable-f50-usb-guardian
             test -f files/etc/uci-defaults/98-network-optimize
             test -f files/etc/uci-defaults/99-custom-setup
             test -f files/etc/uci-defaults/99-emmc-extroot
 
-            test -f files/etc/hotplug.d/net/20-f50-usb-fix
+            test -f files/etc/hotplug.d/net/20-f50-usb-guardian
+            test -f files/etc/hotplug.d/usb/20-f50-usb-guardian
 
             test -f files/etc/sysctl.d/99-bbr.conf
 
@@ -222,15 +249,16 @@ jobs:
             grep -q "option target '/overlay'" files/usr/sbin/emmc-extroot-setup
             grep -q "option target '/mnt/data'" files/usr/sbin/emmc-extroot-setup
 
-            echo "===== 检查 F50 USB 修复点 ====="
-            grep -q 'b8:d4:bc:9f:37:bd' files/usr/sbin/f50-usb-fix
-            grep -q '11200000.usb' files/usr/sbin/f50-usb-fix
-            grep -q 'xhci-mtk/unbind' files/usr/sbin/f50-usb-fix
-            grep -q 'xhci-mtk/bind' files/usr/sbin/f50-usb-fix
-            grep -q 'bindonly' files/etc/hotplug.d/net/20-f50-usb-fix
-            grep -q '/etc/init.d/network reload' files/usr/sbin/f50-usb-fix
-            grep -q 'ifup F50' files/usr/sbin/f50-usb-fix
-            grep -q 'ifup F50_v6' files/usr/sbin/f50-usb-fix
+            echo "===== 检查 F50 USB 根治脚本 ====="
+            grep -q 'START=18' files/etc/init.d/f50-usb-guardian
+            grep -q 'b8:d4:bc:9f:37:bd' files/usr/sbin/f50-usb-guardian
+            grep -q 'f50usb0' files/usr/sbin/f50-usb-guardian
+            grep -q '11200000.usb' files/usr/sbin/f50-usb-guardian
+            grep -q 'xhci-mtk' files/usr/sbin/f50-usb-guardian
+            grep -q 'reset attempt' files/usr/sbin/f50-usb-guardian
+            grep -q 'low-frequency xhci reset' files/usr/sbin/f50-usb-guardian
+            grep -q '/usr/sbin/f50-usb-guardian bind' files/etc/hotplug.d/net/20-f50-usb-guardian
+            grep -q '/usr/sbin/f50-usb-guardian bind' files/etc/hotplug.d/usb/20-f50-usb-guardian
 
             echo "===== 检查旧脚本是否残留 ====="
 
@@ -241,6 +269,12 @@ jobs:
 
             if [ -f files/etc/uci-defaults/97-enable-wifi ]; then
               echo "错误：发现旧的 97-enable-wifi。现在应使用 01-enable-wifi。"
+              exit 1
+            fi
+
+            if find files -type f 2>/dev/null | grep -q 'f50-usb-fix'; then
+              echo "错误：旧 f50-usb-fix 仍然残留"
+              find files -type f 2>/dev/null | grep 'f50-usb-fix' || true
               exit 1
             fi
 
