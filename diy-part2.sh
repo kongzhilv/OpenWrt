@@ -12,24 +12,20 @@
 # - OpenList: OpenListTeam/OpenList-OpenWRT
 # - Turbo ACC: luci-app-turboacc，可提供软件流量分载、Shortcut-FE、全锥形 NAT、BBR 等
 # - eMMC extroot: 首次启动自动切换到 mmcblk0p6，目标约 1GiB overlay
+# - F50 USB 网卡: 开机检测不到时自动软重置 xhci-mtk 11200000.usb，并按 MAC 自动绑定 F50/F50_v6
 #
 # 注意:
 # - 本脚本不内置 factory 文件
 # - 本脚本不自动写 /dev/mmcblk0p2
 # - 适用于 factory 已经手动修好的 RAX3000M
-# - extroot 部分已修复:
-#   1. 首次初始化强制格式化 /dev/mmcblk0p6，避免旧 overlay / 旧密码复活
-#   2. 强制 mount -t ext4
-#   3. 直接写完整 /etc/config/fstab
-#   4. 复制 fstab 到 /mnt/extroot/etc/config/fstab
-#   5. 99-emmc-extroot 最后执行，避免提前 reboot 打断 WiFi 配置
+# - extroot 首次初始化会格式化 /dev/mmcblk0p6，避免旧 overlay / 旧密码复活
+# - 不会格式化 /dev/mmcblk0p7，p7 作为 data 分区保留
 
 set -e
 
 echo "===== 开始执行 diy-part2.sh ====="
 
 # 0. 合并仓库根目录 files/ 到 openwrt/files/
-# 后续本脚本生成的文件会覆盖同路径旧文件
 echo ">>> 合并仓库根目录 files/ 到 openwrt/files/"
 mkdir -p files
 
@@ -76,8 +72,6 @@ echo ">>> 接入 OpenList 官方 OpenWrt 包"
 git clone --depth=1 https://github.com/OpenListTeam/OpenList-OpenWRT package/openlist
 
 # 4. 接入 Turbo ACC
-# 默认完整模式，会引入 luci-app-turboacc、nft-fullcone、shortcut-fe，并 patch firewall4/libnftnl/nftables。
-# 如遇 25.12 兼容性问题，可在 workflow env 里改 TURBOACC_MODE: "no-sfe" 或 "off"。
 echo ">>> 接入 Turbo ACC"
 
 TURBOACC_MODE="${TURBOACC_MODE:-full}"
@@ -255,6 +249,8 @@ echo ">>> 写入首次开机基础设置"
 mkdir -p files/etc/uci-defaults
 mkdir -p files/etc/sysctl.d
 mkdir -p files/usr/sbin
+mkdir -p files/etc/init.d
+mkdir -p files/etc/hotplug.d/net
 
 # 清理旧名称，避免 files/ 里残留旧脚本导致执行顺序错误
 rm -f files/etc/uci-defaults/05-emmc-extroot 2>/dev/null || true
@@ -278,18 +274,13 @@ cat << 'EOF_WIFI' > files/etc/uci-defaults/01-enable-wifi
 
 logger -t enable-wifi "start enable wifi uci-defaults script"
 
-# 如果 wireless 配置不存在，先尝试生成
 [ -s /etc/config/wireless ] || wifi config || true
 
-# 如果 wireless 还没有生成 wifi-device，说明无线驱动/phy 可能还没 ready
-# 这里必须 exit 1，这样 uci-defaults 不会删除本脚本，下次开机继续执行
 uci show wireless 2>/dev/null | grep -q '=wifi-device' || {
     logger -t enable-wifi "no wifi-device found, keep script for next boot"
     exit 1
 }
 
-# 开启所有 radio，并固定信道
-# 重点：5G 不用 auto + HE160，避免 ACS/DFS 导致 5G 显示禁用或开机等待很久
 for dev in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-device/\1/p"); do
     uci -q set "${dev}.disabled=0"
     uci -q set "${dev}.country=CN"
@@ -305,7 +296,6 @@ for dev in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-device/\1/p
     fi
 done
 
-# 开启所有 wifi-iface，并设置为 AP + LAN + 无密码开放
 i=0
 
 for iface in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-iface/\1/p"); do
@@ -337,12 +327,199 @@ uci commit wireless
 
 logger -t enable-wifi "wifi config written successfully"
 
-# 不在这里强行 wifi reload/wifi up
-# 首次启动阶段太早，hostapd / netifd / phy 可能还没完全 ready
-# 下次正常启动网络服务会按 /etc/config/wireless 自动起来
-
 exit 0
 EOF_WIFI
+
+# 9.2 F50 USB 网卡冷启动修复
+echo ">>> 写入 F50 USB 网卡冷启动修复脚本"
+
+cat << 'EOF_F50_USB_FIX' > files/usr/sbin/f50-usb-fix
+#!/bin/sh
+
+LOGTAG="f50-usb-fix"
+F50_MAC="${F50_MAC:-b8:d4:bc:9f:37:bd}"
+XHCI_DEV="${XHCI_DEV:-11200000.usb}"
+MODE="${1:-full}"
+LOCKFILE="/tmp/f50-usb-fix.lock"
+
+log() {
+    logger -t "$LOGTAG" "$*"
+    echo "$LOGTAG: $*"
+}
+
+find_dev_by_mac() {
+    for n in /sys/class/net/*; do
+        dev="$(basename "$n")"
+        [ "$dev" = "lo" ] && continue
+
+        mac="$(cat "$n/address" 2>/dev/null || true)"
+        if [ "$mac" = "$F50_MAC" ]; then
+            echo "$dev"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+bind_f50_network() {
+    DEV="$(find_dev_by_mac || true)"
+
+    [ -n "$DEV" ] || {
+        log "F50 USB NIC not found by MAC $F50_MAC"
+        return 1
+    }
+
+    OLD4="$(uci -q get network.F50.device || true)"
+    OLD6="$(uci -q get network.F50_v6.device || true)"
+
+    log "found F50 USB NIC: dev=$DEV mac=$F50_MAC old4=$OLD4 old6=$OLD6"
+
+    uci -q set network.F50='interface'
+    uci -q set network.F50.proto='dhcp'
+    uci -q set network.F50.device="$DEV"
+    uci -q set network.F50.multipath='off'
+
+    uci -q set network.F50_v6='interface'
+    uci -q set network.F50_v6.proto='dhcpv6'
+    uci -q set network.F50_v6.device="$DEV"
+    uci -q set network.F50_v6.reqaddress='try'
+    uci -q set network.F50_v6.reqprefix='auto'
+    uci -q set network.F50_v6.norelease='1'
+    uci -q set network.F50_v6.multipath='off'
+
+    uci commit network
+
+    if [ "$OLD4" != "$DEV" ] || [ "$OLD6" != "$DEV" ]; then
+        log "F50 device changed, reload network"
+        /etc/init.d/network reload
+        sleep 2
+    else
+        log "F50 device already correct"
+    fi
+
+    ifup F50 2>/dev/null || true
+    ifup F50_v6 2>/dev/null || true
+
+    return 0
+}
+
+wait_and_bind() {
+    i=0
+
+    while [ "$i" -lt 10 ]; do
+        bind_f50_network && return 0
+        i=$((i + 1))
+        sleep 2
+    done
+
+    return 1
+}
+
+if command -v lock >/dev/null 2>&1; then
+    lock -n "$LOCKFILE" || exit 0
+fi
+
+if [ "$MODE" = "bindonly" ]; then
+    sleep 2
+    bind_f50_network
+    RET="$?"
+
+    if command -v lock >/dev/null 2>&1; then
+        lock -u "$LOCKFILE" || true
+    fi
+
+    exit "$RET"
+fi
+
+log "start full F50 USB fix"
+
+sleep 12
+
+if wait_and_bind; then
+    log "F50 found without USB reset"
+
+    if command -v lock >/dev/null 2>&1; then
+        lock -u "$LOCKFILE" || true
+    fi
+
+    exit 0
+fi
+
+if [ -e "/sys/bus/platform/drivers/xhci-mtk/$XHCI_DEV" ]; then
+    log "F50 not found, reset xhci-mtk $XHCI_DEV"
+
+    echo "$XHCI_DEV" > /sys/bus/platform/drivers/xhci-mtk/unbind
+    sleep 3
+    echo "$XHCI_DEV" > /sys/bus/platform/drivers/xhci-mtk/bind
+    sleep 10
+
+    if wait_and_bind; then
+        log "F50 found after USB reset"
+
+        if command -v lock >/dev/null 2>&1; then
+            lock -u "$LOCKFILE" || true
+        fi
+
+        exit 0
+    fi
+else
+    log "xhci-mtk device $XHCI_DEV not found"
+fi
+
+log "F50 still not found"
+
+if command -v lock >/dev/null 2>&1; then
+    lock -u "$LOCKFILE" || true
+fi
+
+exit 1
+EOF_F50_USB_FIX
+
+chmod +x files/usr/sbin/f50-usb-fix
+
+cat << 'EOF_F50_INITD' > files/etc/init.d/f50-usb-fix
+#!/bin/sh /etc/rc.common
+
+START=96
+STOP=10
+USE_PROCD=1
+
+start_service() {
+    procd_open_instance
+    procd_set_param command /usr/sbin/f50-usb-fix full
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+}
+EOF_F50_INITD
+
+chmod +x files/etc/init.d/f50-usb-fix
+
+cat << 'EOF_F50_ENABLE' > files/etc/uci-defaults/96-enable-f50-usb-fix
+#!/bin/sh
+
+/etc/init.d/f50-usb-fix enable
+
+exit 0
+EOF_F50_ENABLE
+
+chmod +x files/etc/uci-defaults/96-enable-f50-usb-fix
+
+cat << 'EOF_F50_HOTPLUG' > files/etc/hotplug.d/net/20-f50-usb-fix
+#!/bin/sh
+
+[ "$ACTION" = "add" ] || exit 0
+
+(
+    sleep 2
+    /usr/sbin/f50-usb-fix bindonly
+) &
+
+exit 0
+EOF_F50_HOTPLUG
+
+chmod +x files/etc/hotplug.d/net/20-f50-usb-fix
 
 # 10. BBR 默认配置
 echo ">>> 写入 BBR 默认配置"
@@ -366,7 +543,7 @@ uci commit firewall
 exit 0
 EOF_NET
 
-# 11. 独立 extroot 修复命令：既可首次启动自动执行，也可 SSH 手动执行
+# 11. 独立 extroot 修复命令
 echo ">>> 写入 /usr/sbin/emmc-extroot-setup"
 
 cat << 'EOF_EXTROOT_BIN' > files/usr/sbin/emmc-extroot-setup
@@ -421,7 +598,6 @@ command -v blkid >/dev/null 2>&1 || {
 umount /mnt/extroot 2>/dev/null || true
 umount /mnt/data 2>/dev/null || true
 
-# 只有 p7 不存在时才重新分区，避免每次启动都动分区表
 if [ ! -b /dev/mmcblk0p7 ]; then
     log "repartitioning /dev/mmcblk0: p6=1GiB extroot, p7=rest data"
 
@@ -447,8 +623,6 @@ fi
     exit 1
 }
 
-# 关键：干净 extroot 模式，强制格式化 p6
-# 这会清掉 p6 里以前残留的旧 overlay、旧密码、旧配置
 if [ "$CLEAN_EXTROOT" = "1" ]; then
     log "clean extroot enabled, formatting /dev/mmcblk0p6 to remove stale overlay"
     mkfs.ext4 -F -L extroot /dev/mmcblk0p6
@@ -459,7 +633,6 @@ else
     }
 fi
 
-# p7 是 data 分区，不强制清空；只有不是 ext4 时才格式化
 block info /dev/mmcblk0p7 | grep -q 'TYPE="ext4"' || {
     log "formatting /dev/mmcblk0p7"
     mkfs.ext4 -F -L data /dev/mmcblk0p7
@@ -508,13 +681,11 @@ EOF_FSTAB
 
 log "mounting extroot/data as ext4"
 
-# 关键：强制指定 ext4，避免 mount 自动识别跑去按 NTFS 挂载
 mount -t ext4 /dev/mmcblk0p6 /mnt/extroot
 mount -t ext4 /dev/mmcblk0p7 /mnt/data
 
 log "copying current overlay to clean extroot"
 
-# 此时 p6 已经是干净 ext4，所以不会继承旧密码/旧配置
 tar -C /overlay -cpf - . | tar -C /mnt/extroot -xpf -
 
 mkdir -p /mnt/extroot/etc/config
@@ -540,7 +711,7 @@ EOF_EXTROOT_BIN
 chmod +x files/usr/sbin/emmc-extroot-setup
 
 # 12. 首次启动自动执行 extroot
-# 注意：必须排在 WiFi 脚本后面，否则 extroot 脚本 reboot 会打断 WiFi 首次配置
+# 注意：必须排在 WiFi/F50/网络优化/主题设置后面，否则 extroot 脚本 reboot 会打断首次配置
 cat << 'EOF_EXTROOT_UCI' > files/etc/uci-defaults/99-emmc-extroot
 #!/bin/sh
 
@@ -553,9 +724,14 @@ EOF_EXTROOT_UCI
 
 # 13. 脚本权限
 chmod +x files/etc/uci-defaults/01-enable-wifi
+chmod +x files/etc/uci-defaults/96-enable-f50-usb-fix
 chmod +x files/etc/uci-defaults/98-network-optimize
 chmod +x files/etc/uci-defaults/99-custom-setup
 chmod +x files/etc/uci-defaults/99-emmc-extroot
+chmod +x files/usr/sbin/f50-usb-fix
+chmod +x files/usr/sbin/emmc-extroot-setup
+chmod +x files/etc/init.d/f50-usb-fix
+chmod +x files/etc/hotplug.d/net/20-f50-usb-fix
 
 # 14. Rust / CI 兼容性修复
 echo ">>> 修复 Rust 在 GitHub Actions / CI 下的 host 编译问题"
