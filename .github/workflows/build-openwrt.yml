@@ -80,8 +80,8 @@ jobs:
           {
             echo "===== 克隆源码 ====="
             date
-            echo "正在克隆官方 OpenWrt 仓库，目标版本: $REPO_BRANCH"
 
+            echo "正在克隆官方 OpenWrt 仓库，目标版本: $REPO_BRANCH"
             git clone -b "$REPO_BRANCH" --depth 1 "$REPO_URL" openwrt
 
             cd openwrt
@@ -164,6 +164,24 @@ jobs:
             grep -q '^CONFIG_PACKAGE_luci-app-openlist=y' .config
             grep -q '^CONFIG_PACKAGE_luci-app-turboacc=y' .config
 
+            echo "===== 检查 eMMC extroot 必需包 ====="
+            grep -q '^CONFIG_PACKAGE_block-mount=y' .config
+            grep -q '^CONFIG_PACKAGE_e2fsprogs=y' .config
+            grep -q '^CONFIG_PACKAGE_parted=y' .config
+            grep -q '^CONFIG_PACKAGE_blkid=y' .config
+            grep -q '^CONFIG_PACKAGE_kmod-fs-ext4=y' .config
+
+            echo "===== 检查 USB 网卡 / F50 相关驱动 ====="
+            grep -q '^CONFIG_PACKAGE_kmod-usb-net=y' .config
+            grep -q '^CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y' .config
+            grep -q '^CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y' .config
+            grep -q '^CONFIG_PACKAGE_kmod-usb-net-rndis=y' .config
+            grep -q '^CONFIG_PACKAGE_kmod-usb-net-rtl8152=y' .config
+            grep -q '^CONFIG_PACKAGE_kmod-usb-net-asix=y' .config
+            grep -q '^CONFIG_PACKAGE_kmod-usb-net-asix-ax88179=y' .config
+            grep -q '^CONFIG_PACKAGE_kmod-usb-net-aqc111=y' .config
+            grep -q '^CONFIG_PACKAGE_kmod-usb-wdm=y' .config
+
             echo "===== 检查 files 嵌入内容 ====="
 
             echo "===== 当前 files/etc/uci-defaults ====="
@@ -172,15 +190,47 @@ jobs:
             echo "===== 当前 files/usr/sbin ====="
             ls -lah files/usr/sbin || true
 
+            echo "===== 当前 files/etc/init.d ====="
+            ls -lah files/etc/init.d || true
+
+            echo "===== 当前 files/etc/hotplug.d/net ====="
+            ls -lah files/etc/hotplug.d/net || true
+
             echo "===== 当前 files/etc/sysctl.d ====="
             ls -lah files/etc/sysctl.d || true
 
             test -f files/usr/sbin/emmc-extroot-setup
+            test -f files/usr/sbin/f50-usb-fix
+
+            test -f files/etc/init.d/f50-usb-fix
+
             test -f files/etc/uci-defaults/01-enable-wifi
+            test -f files/etc/uci-defaults/96-enable-f50-usb-fix
             test -f files/etc/uci-defaults/98-network-optimize
             test -f files/etc/uci-defaults/99-custom-setup
             test -f files/etc/uci-defaults/99-emmc-extroot
+
+            test -f files/etc/hotplug.d/net/20-f50-usb-fix
+
             test -f files/etc/sysctl.d/99-bbr.conf
+
+            echo "===== 检查 extroot 修复点 ====="
+            grep -q 'CLEAN_EXTROOT="${CLEAN_EXTROOT:-1}"' files/usr/sbin/emmc-extroot-setup
+            grep -q 'mkfs.ext4 -F -L extroot /dev/mmcblk0p6' files/usr/sbin/emmc-extroot-setup
+            grep -q 'mount -t ext4 /dev/mmcblk0p6 /mnt/extroot' files/usr/sbin/emmc-extroot-setup
+            grep -q 'mount -t ext4 /dev/mmcblk0p7 /mnt/data' files/usr/sbin/emmc-extroot-setup
+            grep -q "option target '/overlay'" files/usr/sbin/emmc-extroot-setup
+            grep -q "option target '/mnt/data'" files/usr/sbin/emmc-extroot-setup
+
+            echo "===== 检查 F50 USB 修复点 ====="
+            grep -q 'b8:d4:bc:9f:37:bd' files/usr/sbin/f50-usb-fix
+            grep -q '11200000.usb' files/usr/sbin/f50-usb-fix
+            grep -q 'xhci-mtk/unbind' files/usr/sbin/f50-usb-fix
+            grep -q 'xhci-mtk/bind' files/usr/sbin/f50-usb-fix
+            grep -q 'bindonly' files/etc/hotplug.d/net/20-f50-usb-fix
+            grep -q '/etc/init.d/network reload' files/usr/sbin/f50-usb-fix
+            grep -q 'ifup F50' files/usr/sbin/f50-usb-fix
+            grep -q 'ifup F50_v6' files/usr/sbin/f50-usb-fix
 
             echo "===== 检查旧脚本是否残留 ====="
 
@@ -191,6 +241,19 @@ jobs:
 
             if [ -f files/etc/uci-defaults/97-enable-wifi ]; then
               echo "错误：发现旧的 97-enable-wifi。现在应使用 01-enable-wifi。"
+              exit 1
+            fi
+
+            echo "===== 检查不应再嵌入 factory 修复文件 ====="
+
+            if [ -f files/usr/share/rax3000m/factory_fixed.bin ]; then
+              echo "错误：不应再嵌入 factory_fixed.bin。当前机器 factory 已修好。"
+              exit 1
+            fi
+
+            if find files -type f 2>/dev/null | grep -q 'rax3000m-factory'; then
+              echo "错误：发现 factory 自动修复脚本残留。当前版本不应再自动写 /dev/mmcblk0p2。"
+              find files -type f 2>/dev/null | grep 'rax3000m-factory' || true
               exit 1
             fi
 
@@ -214,9 +277,7 @@ jobs:
             date
 
             cd openwrt
-
             echo "$(nproc) thread compile"
-
             make -j"$(nproc)" V=s
           } 2>&1 | tee logs/09_compile_parallel.log
 
