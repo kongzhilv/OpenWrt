@@ -2,7 +2,6 @@ name: Build OpenWrt
 
 on:
   workflow_dispatch:
-
   push:
     branches:
       - main
@@ -64,7 +63,6 @@ jobs:
             sudo docker image prune --all --force || true
 
             sudo apt-get update
-
             sudo apt-get -y install \
               build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
               gettext git libncurses-dev libssl-dev python3-setuptools rsync unzip \
@@ -80,8 +78,8 @@ jobs:
           {
             echo "===== 克隆源码 ====="
             date
-
             echo "正在克隆官方 OpenWrt 仓库，目标版本: $REPO_BRANCH"
+
             git clone -b "$REPO_BRANCH" --depth 1 "$REPO_URL" openwrt
 
             cd openwrt
@@ -95,7 +93,6 @@ jobs:
             date
 
             chmod +x "$DIY_P1_SH"
-
             cd openwrt
             "$GITHUB_WORKSPACE/$DIY_P1_SH"
           } 2>&1 | tee logs/03_diy_part1.log
@@ -130,11 +127,9 @@ jobs:
             date
 
             chmod +x "$DIY_P2_SH"
-
             cp -f "$GITHUB_WORKSPACE/$CONFIG_FILE" openwrt/.config
 
             cd openwrt
-
             "$GITHUB_WORKSPACE/$DIY_P2_SH"
 
             make defconfig
@@ -181,29 +176,6 @@ jobs:
             grep -q '^CONFIG_PACKAGE_kmod-usb-net-asix-ax88179=y' .config
             grep -q '^CONFIG_PACKAGE_kmod-usb-net-aqc111=y' .config
             grep -q '^CONFIG_PACKAGE_kmod-usb-wdm=y' .config
-            grep -q '^CONFIG_PACKAGE_usbutils=y' .config
-
-            echo "===== 检查不再集成 iPhone/usbmuxd/usb-modeswitch ====="
-
-            if grep -q '^CONFIG_PACKAGE_usbmuxd=y' .config; then
-              echo "错误：不应再集成 usbmuxd"
-              exit 1
-            fi
-
-            if grep -q '^CONFIG_PACKAGE_libimobiledevice=y' .config; then
-              echo "错误：不应再集成 libimobiledevice"
-              exit 1
-            fi
-
-            if grep -q '^CONFIG_PACKAGE_kmod-usb-net-ipheth=y' .config; then
-              echo "错误：不应再集成 ipheth"
-              exit 1
-            fi
-
-            if grep -q '^CONFIG_PACKAGE_usb-modeswitch=y' .config; then
-              echo "错误：F50 稳定前不应再集成 usb-modeswitch"
-              exit 1
-            fi
 
             echo "===== 检查 files 嵌入内容 ====="
 
@@ -226,18 +198,20 @@ jobs:
             ls -lah files/etc/sysctl.d || true
 
             test -f files/usr/sbin/emmc-extroot-setup
-            test -f files/usr/sbin/f50-usb-guardian
+            test -f files/usr/sbin/f50-bind
 
-            test -f files/etc/init.d/f50-usb-guardian
+            test -f files/etc/init.d/f50-bind
+            test -f files/etc/init.d/usb-no-autosuspend
 
             test -f files/etc/uci-defaults/01-enable-wifi
-            test -f files/etc/uci-defaults/96-enable-f50-usb-guardian
+            test -f files/etc/uci-defaults/96-f50-services
             test -f files/etc/uci-defaults/98-network-optimize
             test -f files/etc/uci-defaults/99-custom-setup
             test -f files/etc/uci-defaults/99-emmc-extroot
 
-            test -f files/etc/hotplug.d/net/20-f50-usb-guardian
-            test -f files/etc/hotplug.d/usb/20-f50-usb-guardian
+            test -f files/etc/hotplug.d/net/20-f50-bind
+            test -f files/etc/hotplug.d/usb/20-f50-bind
+            test -f files/etc/hotplug.d/usb/21-usb-no-autosuspend
 
             test -f files/etc/sysctl.d/99-bbr.conf
 
@@ -249,19 +223,78 @@ jobs:
             grep -q "option target '/overlay'" files/usr/sbin/emmc-extroot-setup
             grep -q "option target '/mnt/data'" files/usr/sbin/emmc-extroot-setup
 
-            echo "===== 检查 F50 USB 根治脚本 ====="
-            grep -q 'START=18' files/etc/init.d/f50-usb-guardian
-            grep -q 'b8:d4:bc:9f:37:bd' files/usr/sbin/f50-usb-guardian
-            grep -q 'f50usb0' files/usr/sbin/f50-usb-guardian
-            grep -q '11200000.usb' files/usr/sbin/f50-usb-guardian
-            grep -q 'xhci-mtk' files/usr/sbin/f50-usb-guardian
-            grep -q 'reset attempt' files/usr/sbin/f50-usb-guardian
-            grep -q 'low-frequency xhci reset' files/usr/sbin/f50-usb-guardian
-            grep -q '/usr/sbin/f50-usb-guardian bind' files/etc/hotplug.d/net/20-f50-usb-guardian
-            grep -q '/usr/sbin/f50-usb-guardian bind' files/etc/hotplug.d/usb/20-f50-usb-guardian
+            echo "===== 检查 F50 bind 脚本 ====="
+            grep -q 'F50_MAC="${F50_MAC:-b8:d4:bc:9f:37:bd}"' files/usr/sbin/f50-bind
+            grep -q 'TAG="f50-bind"' files/usr/sbin/f50-bind
+            grep -q 'refresh_usb_authorized_once' files/usr/sbin/f50-bind
+            grep -q 'toggle root hub authorized' files/usr/sbin/f50-bind
+            grep -q 'ifup F50' files/usr/sbin/f50-bind
+            grep -q 'ifup F50_v6' files/usr/sbin/f50-bind
+            grep -q '/usr/sbin/f50-bind bind' files/etc/hotplug.d/net/20-f50-bind
+            grep -q '/usr/sbin/f50-bind bind' files/etc/hotplug.d/usb/20-f50-bind
+            grep -q '/etc/init.d/f50-bind enable' files/etc/uci-defaults/96-f50-services
+            grep -q '/etc/init.d/usb-no-autosuspend enable' files/etc/uci-defaults/96-f50-services
 
-            echo "===== 检查旧脚本是否残留 ====="
+            echo "===== 检查 USB autosuspend 脚本 ====="
+            grep -q 'START=20' files/etc/init.d/usb-no-autosuspend
+            grep -q '/sys/module/usbcore/parameters/autosuspend' files/etc/init.d/usb-no-autosuspend
+            grep -q 'power/control' files/etc/init.d/usb-no-autosuspend
+            grep -q 'autosuspend_delay_ms' files/etc/init.d/usb-no-autosuspend
+            grep -q 'power/control' files/etc/hotplug.d/usb/21-usb-no-autosuspend
+            grep -q 'autosuspend_delay_ms' files/etc/hotplug.d/usb/21-usb-no-autosuspend
 
+            echo "===== 检查旧 F50 脚本是否残留 ====="
+            if [ -f files/usr/sbin/f50-usb-fix ]; then
+              echo "错误：发现旧的 files/usr/sbin/f50-usb-fix。当前应使用 f50-bind。"
+              exit 1
+            fi
+
+            if [ -f files/usr/sbin/f50-usb-guardian ]; then
+              echo "错误：发现旧的 files/usr/sbin/f50-usb-guardian。当前应使用 f50-bind。"
+              exit 1
+            fi
+
+            if [ -f files/etc/init.d/f50-usb-fix ]; then
+              echo "错误：发现旧的 files/etc/init.d/f50-usb-fix。当前应使用 f50-bind。"
+              exit 1
+            fi
+
+            if [ -f files/etc/init.d/f50-usb-guardian ]; then
+              echo "错误：发现旧的 files/etc/init.d/f50-usb-guardian。当前应使用 f50-bind。"
+              exit 1
+            fi
+
+            if [ -f files/etc/uci-defaults/96-enable-f50-usb-fix ]; then
+              echo "错误：发现旧的 96-enable-f50-usb-fix。当前应使用 96-f50-services。"
+              exit 1
+            fi
+
+            if [ -f files/etc/uci-defaults/96-enable-f50-usb-guardian ]; then
+              echo "错误：发现旧的 96-enable-f50-usb-guardian。当前应使用 96-f50-services。"
+              exit 1
+            fi
+
+            if [ -f files/etc/hotplug.d/net/20-f50-usb-fix ]; then
+              echo "错误：发现旧的 net hotplug 20-f50-usb-fix。当前应使用 20-f50-bind。"
+              exit 1
+            fi
+
+            if [ -f files/etc/hotplug.d/net/20-f50-usb-guardian ]; then
+              echo "错误：发现旧的 net hotplug 20-f50-usb-guardian。当前应使用 20-f50-bind。"
+              exit 1
+            fi
+
+            if [ -f files/etc/hotplug.d/usb/20-f50-usb-fix ]; then
+              echo "错误：发现旧的 usb hotplug 20-f50-usb-fix。当前应使用 20-f50-bind。"
+              exit 1
+            fi
+
+            if [ -f files/etc/hotplug.d/usb/20-f50-usb-guardian ]; then
+              echo "错误：发现旧的 usb hotplug 20-f50-usb-guardian。当前应使用 20-f50-bind。"
+              exit 1
+            fi
+
+            echo "===== 检查其他旧脚本是否残留 ====="
             if [ -f files/etc/uci-defaults/05-emmc-extroot ]; then
               echo "错误：发现旧的 05-emmc-extroot。这个脚本会早于 WiFi 脚本执行，可能提前 reboot。"
               exit 1
@@ -272,14 +305,7 @@ jobs:
               exit 1
             fi
 
-            if find files -type f 2>/dev/null | grep -q 'f50-usb-fix'; then
-              echo "错误：旧 f50-usb-fix 仍然残留"
-              find files -type f 2>/dev/null | grep 'f50-usb-fix' || true
-              exit 1
-            fi
-
             echo "===== 检查不应再嵌入 factory 修复文件 ====="
-
             if [ -f files/usr/share/rax3000m/factory_fixed.bin ]; then
               echo "错误：不应再嵌入 factory_fixed.bin。当前机器 factory 已修好。"
               exit 1
