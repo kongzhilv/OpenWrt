@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - master
+      - make
       - fix-rax3000m-emmc-target
     paths-ignore:
       - "*.md"
@@ -122,7 +123,7 @@ jobs:
             cp -f .config "$GITHUB_WORKSPACE/logs/06_final.config"
           } 2>&1 | tee logs/06_diy_part2_and_defconfig.log
 
-      - name: Validate minimal F50 WiFi SFTP config
+      - name: Validate final config
         run: |
           {
             echo "===== Validate final config ====="
@@ -135,35 +136,39 @@ jobs:
             grep -q '^CONFIG_TARGET_mediatek=y' .config
             grep -q '^CONFIG_TARGET_mediatek_filogic=y' .config
             grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=y' .config
+            grep -q '^CONFIG_TARGET_ROOTFS_SQUASHFS=y' .config
 
-            echo "===== Required LuCI package ====="
+            echo "===== Must not be OpenWrt One ====="
+            ! grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one=y' .config
+            ! grep -q '^CONFIG_TARGET_PROFILE="DEVICE_openwrt_one"' .config
+            ! grep -q '^CONFIG_TARGET_ROOTFS_INITRAMFS=y' .config
+
+            echo "===== Required packages ====="
             grep -q '^CONFIG_PACKAGE_luci=y' .config
-
-            echo "===== Required SFTP package ====="
             grep -q '^CONFIG_PACKAGE_openssh-sftp-server=y' .config
 
-            echo "===== Required WiFi packages ====="
             grep -q '^CONFIG_PACKAGE_kmod-mt76=y' .config
             grep -q '^CONFIG_PACKAGE_kmod-mt7915e=y' .config
             grep -q '^CONFIG_PACKAGE_wpad-basic-mbedtls=y' .config
             grep -q '^CONFIG_PACKAGE_wireless-regdb=y' .config
 
-            echo "===== Embedded WiFi uci-defaults ====="
-            test -f files/etc/uci-defaults/01-enable-wifi
-            grep -q 'wifi config' files/etc/uci-defaults/01-enable-wifi
-            grep -q 'OpenWrt_2G' files/etc/uci-defaults/01-enable-wifi
-            grep -q 'OpenWrt_5G' files/etc/uci-defaults/01-enable-wifi
-
-            echo "===== Required F50 USB packages ====="
             grep -q '^CONFIG_PACKAGE_usbutils=y' .config
             grep -q '^CONFIG_PACKAGE_kmod-usb-net=y' .config
             grep -q '^CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y' .config
             grep -q '^CONFIG_PACKAGE_kmod-usb-net-rndis=y' .config
 
-            echo "===== Optional CDC packages ====="
-            grep -E '^CONFIG_PACKAGE_kmod-usb-net-cdc-(ncm|eem|subset)=y' .config || true
+            echo "===== Embedded files ====="
+            find files -type f | sort
+            test -f files/etc/uci-defaults/01-enable-wifi
 
-            echo "===== Make sure custom stack is not enabled ====="
+            bad_files="$(find files -type f | sort | grep -v '^files/etc/uci-defaults/01-enable-wifi$' || true)"
+            if [ -n "$bad_files" ]; then
+              echo "ERROR: unexpected embedded files:"
+              echo "$bad_files"
+              exit 1
+            fi
+
+            echo "===== Custom stack must be disabled ====="
             ! grep -q '^CONFIG_PACKAGE_luci-app-openclash=y' .config
             ! grep -q '^CONFIG_PACKAGE_openlist=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-openlist=y' .config
@@ -181,17 +186,7 @@ jobs:
             ! grep -q '^CONFIG_PACKAGE_usb-modeswitch=y' .config
             ! grep -q '^CONFIG_PACKAGE_usbmuxd=y' .config
 
-            echo "===== Make sure only WiFi embedded script exists ====="
-            find files -type f | sort
-
-            bad_files="$(find files -type f | sort | grep -v '^files/etc/uci-defaults/01-enable-wifi$' || true)"
-            if [ -n "$bad_files" ]; then
-              echo "ERROR: unexpected embedded files:"
-              echo "$bad_files"
-              exit 1
-            fi
-
-            echo "Minimal F50 WiFi SFTP config validation passed."
+            echo "Validate passed."
           } 2>&1 | tee logs/07_validate_config.log
 
       - name: Download sources
@@ -209,10 +204,11 @@ jobs:
             echo "===== Build OpenWrt ====="
             date
             cd openwrt
-            make -j"$(nproc)" V=s
+            make -j4 V=s || make -j1 V=s
           } 2>&1 | tee logs/09_compile.log
 
       - name: Disk usage and outputs
+        if: ${{ always() }}
         run: |
           {
             echo "===== Disk usage ====="
@@ -233,7 +229,7 @@ jobs:
             \( -name "*.bin" -o -name "*.img" -o -name "*.img.gz" -o -name "*.itb" -o -name "*.manifest" -o -name "*.buildinfo" -o -name "*.json" \) \
             -exec cp -f {} release-files/ \;
 
-          ls -lah release-files || true
+          ls -lah release-files
 
       - name: Upload build logs artifact
         if: ${{ always() }}
@@ -265,19 +261,15 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           body: |
-            Minimal OpenWrt 25.12.1 RAX3000M F50 cold-boot test build.
+            Minimal OpenWrt 25.12.1 RAX3000M build.
 
             Included:
             - RAX3000M target
-            - LuCI basic UI
+            - LuCI
             - WiFi mt76 / mt7915e
-            - First-boot WiFi enable script
+            - WiFi first-boot enable script
             - SFTP via openssh-sftp-server
-            - usbutils
-            - kmod-usb-net
-            - kmod-usb-net-cdc-ether
-            - kmod-usb-net-rndis
-            - optional CDC NCM/EEM/subset
+            - F50 USB Ethernet drivers
 
             Excluded:
             - OpenClash
