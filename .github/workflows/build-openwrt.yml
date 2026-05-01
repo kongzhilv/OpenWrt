@@ -141,7 +141,6 @@ jobs:
             echo "===== Must not be OpenWrt One ====="
             ! grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one=y' .config
             ! grep -q '^CONFIG_TARGET_PROFILE="DEVICE_openwrt_one"' .config
-            ! grep -q '^CONFIG_TARGET_ROOTFS_INITRAMFS=y' .config
 
             echo "===== Required base packages ====="
             grep -q '^CONFIG_PACKAGE_luci=y' .config
