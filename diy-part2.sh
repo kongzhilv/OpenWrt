@@ -58,7 +58,7 @@ CONFIG_PACKAGE_coreutils-timeout=y
 CONFIG_PACKAGE_ip-full=y
 CONFIG_PACKAGE_tcpdump=y
 CONFIG_PACKAGE_iperf3=y
-CONFIG_PACKAGE_mtr=y
+CONFIG_PACKAGE_mtr-json=y
 CONFIG_PACKAGE_bind-dig=y
 CONFIG_PACKAGE_arp-scan=y
 
