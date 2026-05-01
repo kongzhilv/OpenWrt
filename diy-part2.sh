@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: force RAX3000M minimal F50 WiFi SFTP config ====="
+echo "===== DIY part2: RAX3000M minimal F50 WiFi SFTP + ttyd tools ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -10,7 +10,7 @@ sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generat
 rm -rf files
 mkdir -p files/etc/uci-defaults
 
-# 关键：不要在旧 .config 上 sed 修，直接重写，避免 openwrt_one 残留
+# 直接重写 .config，避免 openwrt_one 或旧包残留
 cat > .config <<'EOF_CONFIG'
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
@@ -24,6 +24,40 @@ CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
 
 # SFTP
 CONFIG_PACKAGE_openssh-sftp-server=y
+
+# Web terminal
+CONFIG_PACKAGE_ttyd=y
+CONFIG_PACKAGE_luci-app-ttyd=y
+CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
+
+# Common tools
+CONFIG_PACKAGE_bash=y
+CONFIG_PACKAGE_curl=y
+CONFIG_PACKAGE_wget-ssl=y
+CONFIG_PACKAGE_ca-bundle=y
+CONFIG_PACKAGE_ca-certificates=y
+CONFIG_PACKAGE_nano=y
+CONFIG_PACKAGE_vim=y
+CONFIG_PACKAGE_htop=y
+CONFIG_PACKAGE_tree=y
+CONFIG_PACKAGE_lsof=y
+CONFIG_PACKAGE_procps-ng-ps=y
+CONFIG_PACKAGE_procps-ng-free=y
+CONFIG_PACKAGE_procps-ng-pgrep=y
+CONFIG_PACKAGE_procps-ng-pkill=y
+CONFIG_PACKAGE_procps-ng-top=y
+CONFIG_PACKAGE_coreutils=y
+CONFIG_PACKAGE_coreutils-nohup=y
+CONFIG_PACKAGE_coreutils-stat=y
+CONFIG_PACKAGE_coreutils-timeout=y
+
+# Network tools
+CONFIG_PACKAGE_ip-full=y
+CONFIG_PACKAGE_tcpdump=y
+CONFIG_PACKAGE_iperf3=y
+CONFIG_PACKAGE_mtr-json=y
+CONFIG_PACKAGE_bind-dig=y
+CONFIG_PACKAGE_arp-scan=y
 
 # WiFi
 CONFIG_PACKAGE_kmod-mt76=y
@@ -45,7 +79,7 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
 CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y
 CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 
-# Disabled
+# Not enabled in this step
 # CONFIG_PACKAGE_kmod-usb-net-cdc-mbim is not set
 # CONFIG_PACKAGE_kmod-usb-net-qmi-wwan is not set
 # CONFIG_PACKAGE_kmod-usb-wdm is not set
@@ -57,6 +91,8 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 # CONFIG_PACKAGE_kmod-usb-net-ipheth is not set
 # CONFIG_PACKAGE_usbmuxd is not set
 # CONFIG_PACKAGE_libimobiledevice is not set
+
+# Still disabled
 # CONFIG_PACKAGE_openlist is not set
 # CONFIG_PACKAGE_luci-app-openlist is not set
 # CONFIG_PACKAGE_luci-app-openclash is not set
