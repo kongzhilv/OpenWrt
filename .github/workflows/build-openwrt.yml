@@ -1,4 +1,4 @@
-name: Build OpenWrt Minimal F50 WiFi SFTP ttyd
+name: Build OpenWrt F50 WiFi SFTP ttyd Argon
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ env:
 
 jobs:
   build:
-    name: build-minimal-f50-wifi-sftp-ttyd
+    name: build-f50-wifi-sftp-ttyd-argon
     runs-on: ubuntu-22.04
 
     defaults:
@@ -147,6 +147,12 @@ jobs:
             grep -q '^CONFIG_PACKAGE_luci=y' .config
             grep -q '^CONFIG_PACKAGE_openssh-sftp-server=y' .config
 
+            echo "===== Required Argon package ====="
+            grep -q '^CONFIG_PACKAGE_luci-theme-argon=y' .config
+            test -d package/luci-theme-argon
+            test -f files/etc/uci-defaults/02-set-argon-theme
+            grep -q "/luci-static/argon" files/etc/uci-defaults/02-set-argon-theme
+
             echo "===== Required ttyd packages ====="
             grep -q '^CONFIG_PACKAGE_ttyd=y' .config
             grep -q '^CONFIG_PACKAGE_luci-app-ttyd=y' .config
@@ -159,7 +165,7 @@ jobs:
             grep -q '^CONFIG_PACKAGE_htop=y' .config
             grep -q '^CONFIG_PACKAGE_tcpdump=y' .config
             grep -q '^CONFIG_PACKAGE_iperf3=y' .config
-            grep -q '^CONFIG_PACKAGE_mtr-json=y' .config
+            grep -q '^CONFIG_PACKAGE_mtr=y' .config
             grep -q '^CONFIG_PACKAGE_bind-dig=y' .config
 
             echo "===== Required WiFi packages ====="
@@ -177,8 +183,9 @@ jobs:
             echo "===== Embedded files ====="
             find files -type f | sort
             test -f files/etc/uci-defaults/01-enable-wifi
+            test -f files/etc/uci-defaults/02-set-argon-theme
 
-            bad_files="$(find files -type f | sort | grep -v '^files/etc/uci-defaults/01-enable-wifi$' || true)"
+            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme)$' || true)"
             if [ -n "$bad_files" ]; then
               echo "ERROR: unexpected embedded files:"
               echo "$bad_files"
@@ -186,6 +193,7 @@ jobs:
             fi
 
             echo "===== Still disabled custom stack ====="
+            ! grep -q '^CONFIG_PACKAGE_luci-app-argon-config=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-openclash=y' .config
             ! grep -q '^CONFIG_PACKAGE_openlist=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-openlist=y' .config
@@ -269,7 +277,7 @@ jobs:
       - name: Generate release tag
         if: env.UPLOAD_RELEASE == 'true'
         run: |
-          echo "RELEASE_TAG=OpenWrt_Minimal_F50_WiFi_SFTP_ttyd_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: env.UPLOAD_RELEASE == 'true'
@@ -281,11 +289,19 @@ jobs:
             RAX3000M test build.
 
             Added in this version:
+            - luci-theme-argon
+            - default LuCI theme set to Argon
+
+            Already included:
             - ttyd
             - luci-app-ttyd
             - common tools
+            - F50 USB Ethernet drivers
+            - WiFi
+            - SFTP
 
             Still not included:
+            - luci-app-argon-config
             - F50 auto bind script
             - OpenClash
             - OpenList
