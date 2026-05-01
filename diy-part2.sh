@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: RAX3000M minimal F50 WiFi SFTP + ttyd tools ====="
+echo "===== DIY part2: RAX3000M F50 WiFi SFTP ttyd tools + Argon ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -21,6 +21,9 @@ CONFIG_TARGET_ROOTFS_SQUASHFS=y
 CONFIG_PACKAGE_luci=y
 CONFIG_LUCI_LANG_zh_Hans=y
 CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+
+# LuCI Argon theme
+CONFIG_PACKAGE_luci-theme-argon=y
 
 # SFTP
 CONFIG_PACKAGE_openssh-sftp-server=y
@@ -55,7 +58,7 @@ CONFIG_PACKAGE_coreutils-timeout=y
 CONFIG_PACKAGE_ip-full=y
 CONFIG_PACKAGE_tcpdump=y
 CONFIG_PACKAGE_iperf3=y
-CONFIG_PACKAGE_mtr-json=y
+CONFIG_PACKAGE_mtr=y
 CONFIG_PACKAGE_bind-dig=y
 CONFIG_PACKAGE_arp-scan=y
 
@@ -80,6 +83,7 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y
 CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 
 # Not enabled in this step
+# CONFIG_PACKAGE_luci-app-argon-config is not set
 # CONFIG_PACKAGE_kmod-usb-net-cdc-mbim is not set
 # CONFIG_PACKAGE_kmod-usb-net-qmi-wwan is not set
 # CONFIG_PACKAGE_kmod-usb-wdm is not set
@@ -174,5 +178,21 @@ exit 0
 EOF_WIFI
 
 chmod +x files/etc/uci-defaults/01-enable-wifi
+
+cat > files/etc/uci-defaults/02-set-argon-theme <<'EOF_ARGON'
+#!/bin/sh
+
+logger -t set-argon-theme "set LuCI Argon theme"
+
+uci -q set luci.main.mediaurlbase='/luci-static/argon'
+uci -q commit luci
+
+/etc/init.d/uhttpd restart 2>/dev/null || true
+
+logger -t set-argon-theme "done"
+exit 0
+EOF_ARGON
+
+chmod +x files/etc/uci-defaults/02-set-argon-theme
 
 echo "===== DIY part2 done ====="
