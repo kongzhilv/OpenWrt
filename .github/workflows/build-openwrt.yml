@@ -1,4 +1,4 @@
-name: Build OpenWrt Minimal F50 WiFi SFTP
+name: Build OpenWrt Minimal F50 WiFi SFTP ttyd
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ env:
 
 jobs:
   build:
-    name: build-minimal-f50-wifi-sftp
+    name: build-minimal-f50-wifi-sftp-ttyd
     runs-on: ubuntu-22.04
 
     defaults:
@@ -143,15 +143,32 @@ jobs:
             ! grep -q '^CONFIG_TARGET_PROFILE="DEVICE_openwrt_one"' .config
             ! grep -q '^CONFIG_TARGET_ROOTFS_INITRAMFS=y' .config
 
-            echo "===== Required packages ====="
+            echo "===== Required base packages ====="
             grep -q '^CONFIG_PACKAGE_luci=y' .config
             grep -q '^CONFIG_PACKAGE_openssh-sftp-server=y' .config
 
+            echo "===== Required ttyd packages ====="
+            grep -q '^CONFIG_PACKAGE_ttyd=y' .config
+            grep -q '^CONFIG_PACKAGE_luci-app-ttyd=y' .config
+            grep -q '^CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y' .config
+
+            echo "===== Required common tools ====="
+            grep -q '^CONFIG_PACKAGE_bash=y' .config
+            grep -q '^CONFIG_PACKAGE_curl=y' .config
+            grep -q '^CONFIG_PACKAGE_wget-ssl=y' .config
+            grep -q '^CONFIG_PACKAGE_htop=y' .config
+            grep -q '^CONFIG_PACKAGE_tcpdump=y' .config
+            grep -q '^CONFIG_PACKAGE_iperf3=y' .config
+            grep -q '^CONFIG_PACKAGE_mtr-json=y' .config
+            grep -q '^CONFIG_PACKAGE_bind-dig=y' .config
+
+            echo "===== Required WiFi packages ====="
             grep -q '^CONFIG_PACKAGE_kmod-mt76=y' .config
             grep -q '^CONFIG_PACKAGE_kmod-mt7915e=y' .config
             grep -q '^CONFIG_PACKAGE_wpad-basic-mbedtls=y' .config
             grep -q '^CONFIG_PACKAGE_wireless-regdb=y' .config
 
+            echo "===== Required F50 USB packages ====="
             grep -q '^CONFIG_PACKAGE_usbutils=y' .config
             grep -q '^CONFIG_PACKAGE_kmod-usb-net=y' .config
             grep -q '^CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y' .config
@@ -168,7 +185,7 @@ jobs:
               exit 1
             fi
 
-            echo "===== Custom stack must be disabled ====="
+            echo "===== Still disabled custom stack ====="
             ! grep -q '^CONFIG_PACKAGE_luci-app-openclash=y' .config
             ! grep -q '^CONFIG_PACKAGE_openlist=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-openlist=y' .config
@@ -252,7 +269,7 @@ jobs:
       - name: Generate release tag
         if: env.UPLOAD_RELEASE == 'true'
         run: |
-          echo "RELEASE_TAG=OpenWrt_Minimal_F50_WiFi_SFTP_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_Minimal_F50_WiFi_SFTP_ttyd_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: env.UPLOAD_RELEASE == 'true'
@@ -261,27 +278,23 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           body: |
-            Minimal OpenWrt 25.12.1 RAX3000M build.
+            RAX3000M test build.
 
-            Included:
-            - RAX3000M target
-            - LuCI
-            - WiFi mt76 / mt7915e
-            - WiFi first-boot enable script
-            - SFTP via openssh-sftp-server
-            - F50 USB Ethernet drivers
+            Added in this version:
+            - ttyd
+            - luci-app-ttyd
+            - common tools
 
-            Excluded:
+            Still not included:
+            - F50 auto bind script
             - OpenClash
             - OpenList
             - Docker
             - DiskMan
             - Turbo ACC
             - extroot
-            - custom F50 scripts
             - usb-no-autosuspend
-            - usb-modeswitch
-            - QMI / MBIM / serial stack
+            - xHCI reset scripts
           files: release-files/*
           draft: false
           prerelease: false
