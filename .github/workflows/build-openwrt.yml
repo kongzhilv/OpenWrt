@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 WiFi SFTP ttyd Argon
+name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-wifi-sftp-ttyd-argon
+    name: build-f50-wifi-sftp-ttyd-argon-openlist
     runs-on: ubuntu-22.04
 
     defaults:
@@ -152,6 +152,13 @@ jobs:
             test -f files/etc/uci-defaults/02-set-argon-theme
             grep -q "/luci-static/argon" files/etc/uci-defaults/02-set-argon-theme
 
+            echo "===== Required OpenList package ====="
+            test -d package/openlist
+            test -d feeds/packages/lang/golang
+            grep -q '^CONFIG_PACKAGE_openlist=y' .config
+            grep -q '^CONFIG_PACKAGE_luci-app-openlist=y' .config
+            grep -q '^CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y' .config
+
             echo "===== Required ttyd packages ====="
             grep -q '^CONFIG_PACKAGE_ttyd=y' .config
             grep -q '^CONFIG_PACKAGE_luci-app-ttyd=y' .config
@@ -194,8 +201,6 @@ jobs:
             echo "===== Still disabled custom stack ====="
             ! grep -q '^CONFIG_PACKAGE_luci-app-argon-config=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-openclash=y' .config
-            ! grep -q '^CONFIG_PACKAGE_openlist=y' .config
-            ! grep -q '^CONFIG_PACKAGE_luci-app-openlist=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-diskman=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc=y' .config
             ! grep -q '^CONFIG_PACKAGE_dockerd=y' .config
@@ -276,7 +281,7 @@ jobs:
       - name: Generate release tag
         if: env.UPLOAD_RELEASE == 'true'
         run: |
-          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_OpenList_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: env.UPLOAD_RELEASE == 'true'
@@ -288,10 +293,13 @@ jobs:
             RAX3000M test build.
 
             Added in this version:
-            - luci-theme-argon
-            - default LuCI theme set to Argon
+            - OpenList
+            - luci-app-openlist
+            - luci-i18n-openlist-zh-cn
+            - OpenListTeam golang feed replacement
 
             Already included:
+            - luci-theme-argon
             - ttyd
             - luci-app-ttyd
             - common tools
@@ -300,10 +308,8 @@ jobs:
             - SFTP
 
             Still not included:
-            - luci-app-argon-config
             - F50 auto bind script
             - OpenClash
-            - OpenList
             - Docker
             - DiskMan
             - Turbo ACC
