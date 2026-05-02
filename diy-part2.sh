@@ -1,10 +1,24 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: RAX3000M F50 WiFi SFTP ttyd tools + Argon ====="
+echo "===== DIY part2: RAX3000M F50 WiFi SFTP ttyd tools Argon + OpenList ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
+
+echo "===== Add OpenList source ====="
+
+# OpenList 官方建议替换 golang feed
+if [ -d feeds/packages ]; then
+    rm -rf feeds/packages/lang/golang
+    mkdir -p feeds/packages/lang
+    git clone --depth 1 -b 24.x https://github.com/OpenListTeam/packages_lang_golang.git feeds/packages/lang/golang
+else
+    echo "WARNING: feeds/packages not found, skip golang replacement"
+fi
+
+rm -rf package/openlist
+git clone --depth 1 https://github.com/OpenListTeam/OpenList-OpenWRT.git package/openlist
 
 # 清掉旧 files，避免旧 F50/extroot/OpenClash 脚本进入固件
 rm -rf files
@@ -32,6 +46,11 @@ CONFIG_PACKAGE_openssh-sftp-server=y
 CONFIG_PACKAGE_ttyd=y
 CONFIG_PACKAGE_luci-app-ttyd=y
 CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
+
+# OpenList
+CONFIG_PACKAGE_openlist=y
+CONFIG_PACKAGE_luci-app-openlist=y
+CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y
 
 # Common tools
 CONFIG_PACKAGE_bash=y
@@ -97,8 +116,6 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 # CONFIG_PACKAGE_libimobiledevice is not set
 
 # Still disabled
-# CONFIG_PACKAGE_openlist is not set
-# CONFIG_PACKAGE_luci-app-openlist is not set
 # CONFIG_PACKAGE_luci-app-openclash is not set
 # CONFIG_PACKAGE_luci-app-diskman is not set
 # CONFIG_PACKAGE_luci-app-turboacc is not set
