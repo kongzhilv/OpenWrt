@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan USBStorage TempInfo ManualExtroot
+name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan RollbackTest
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-wifi-sftp-ttyd-argon-openlist-diskman-usbstorage-tempinfo-manual-extroot
+    name: build-f50-wifi-sftp-ttyd-argon-openlist-diskman-rollback-test
     runs-on: ubuntu-22.04
 
     defaults:
@@ -145,16 +145,13 @@ jobs:
             echo "===== Required base packages ====="
             grep -q '^CONFIG_PACKAGE_luci=y' .config
             grep -q '^CONFIG_PACKAGE_luci-i18n-base-zh-cn=y' .config
-            grep -q '^CONFIG_PACKAGE_rpcd-mod-file=y' .config
             grep -q '^CONFIG_PACKAGE_openssh-sftp-server=y' .config
 
             echo "===== Required Argon package ====="
             grep -q '^CONFIG_PACKAGE_luci-theme-argon=y' .config
             test -d package/luci-theme-argon
             test -f files/etc/uci-defaults/02-set-argon-theme
-            test -f files/etc/uci-defaults/03-argon-dark-line-fix
             grep -q "/luci-static/argon" files/etc/uci-defaults/02-set-argon-theme
-            grep -q "custom-argon-dark-line-fix" files/etc/uci-defaults/03-argon-dark-line-fix
 
             echo "===== Required OpenList package ====="
             test -d package/openlist
@@ -171,13 +168,6 @@ jobs:
             grep -q '^CONFIG_PACKAGE_parted=y' .config
             grep -q '^CONFIG_PACKAGE_e2fsprogs=y' .config
             grep -q '^CONFIG_PACKAGE_smartmontools=y' .config
-
-            echo "===== Required USB storage/ext4 packages ====="
-            grep -q '^CONFIG_PACKAGE_kmod-usb-storage=y' .config
-            grep -q '^CONFIG_PACKAGE_kmod-usb-storage-uas=y' .config
-            grep -q '^CONFIG_PACKAGE_block-mount=y' .config
-            grep -q '^CONFIG_PACKAGE_kmod-fs-ext4=y' .config
-            grep -q '^CONFIG_PACKAGE_kmod-scsi-core=y' .config
 
             echo "===== Required ttyd packages ====="
             grep -q '^CONFIG_PACKAGE_ttyd=y' .config
@@ -200,7 +190,7 @@ jobs:
             grep -q '^CONFIG_PACKAGE_wpad-basic-mbedtls=y' .config
             grep -q '^CONFIG_PACKAGE_wireless-regdb=y' .config
 
-            echo "===== Required F50 USB packages ====="
+            echo "===== Required F50 USB network packages ====="
             grep -q '^CONFIG_PACKAGE_usbutils=y' .config
             grep -q '^CONFIG_PACKAGE_kmod-usb-net=y' .config
             grep -q '^CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y' .config
@@ -210,29 +200,21 @@ jobs:
             find files -type f | sort
             test -f files/etc/uci-defaults/01-enable-wifi
             test -f files/etc/uci-defaults/02-set-argon-theme
-            test -f files/etc/uci-defaults/03-argon-dark-line-fix
-            test -f files/sbin/tempinfo
-            test -f files/usr/share/rpcd/acl.d/luci-app-tempinfo.json
-            test -f files/www/luci-static/resources/view/status/include/10_system.js
-            test -f files/usr/sbin/extroot-status
-            test -f files/usr/sbin/extroot-setup
 
-            grep -q '/sys/class/thermal/thermal_zone' files/sbin/tempinfo
-            grep -q '/sys/class/hwmon/hwmon' files/sbin/tempinfo
-            grep -q '/sys/kernel/debug/ieee80211/phy' files/sbin/tempinfo
-            grep -q '/sbin/tempinfo' files/www/luci-static/resources/view/status/include/10_system.js
-            grep -q 'Temperature' files/www/luci-static/resources/view/status/include/10_system.js
-            grep -q 'Type YES to continue' files/usr/sbin/extroot-setup
-            grep -q 'This script only reports status' files/usr/sbin/extroot-status
-
-            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme|files/etc/uci-defaults/03-argon-dark-line-fix|files/sbin/tempinfo|files/usr/share/rpcd/acl.d/luci-app-tempinfo.json|files/www/luci-static/resources/view/status/include/10_system.js|files/usr/sbin/extroot-status|files/usr/sbin/extroot-setup)$' || true)"
+            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme)$' || true)"
             if [ -n "$bad_files" ]; then
               echo "ERROR: unexpected embedded files:"
               echo "$bad_files"
               exit 1
             fi
 
-            echo "===== Still disabled custom stack ====="
+            echo "===== Must be removed in this rollback test ====="
+            ! grep -q '^CONFIG_PACKAGE_rpcd-mod-file=y' .config
+            ! grep -q '^CONFIG_PACKAGE_kmod-usb-storage=y' .config
+            ! grep -q '^CONFIG_PACKAGE_kmod-usb-storage-uas=y' .config
+            ! grep -q '^CONFIG_PACKAGE_block-mount=y' .config
+            ! grep -q '^CONFIG_PACKAGE_kmod-fs-ext4=y' .config
+            ! grep -q '^CONFIG_PACKAGE_mount-utils=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-argon-config=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-openclash=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc=y' .config
@@ -247,6 +229,13 @@ jobs:
             ! grep -q '^CONFIG_PACKAGE_kmod-usb-serial=y' .config
             ! grep -q '^CONFIG_PACKAGE_usb-modeswitch=y' .config
             ! grep -q '^CONFIG_PACKAGE_usbmuxd=y' .config
+            ! test -e files/sbin/tempinfo
+            ! test -e files/usr/share/rpcd/acl.d/luci-app-tempinfo.json
+            ! test -e files/www/luci-static/resources/view/status/include/10_system.js
+            ! test -e files/www/luci-static/resources/view/status/include/11_all_temperatures.js
+            ! test -e files/usr/sbin/extroot-status
+            ! test -e files/usr/sbin/extroot-setup
+            ! test -e files/etc/uci-defaults/03-argon-dark-line-fix
 
             echo "Validate passed."
           } 2>&1 | tee logs/07_validate_config.log
@@ -314,7 +303,7 @@ jobs:
       - name: Generate release tag
         if: env.UPLOAD_RELEASE == 'true'
         run: |
-          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_OpenList_DiskMan_USBStorage_TempInfo_ExtrootManual_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_OpenList_DiskMan_RollbackTest_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: env.UPLOAD_RELEASE == 'true'
@@ -323,35 +312,28 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           body: |
-            RAX3000M test build.
+            RAX3000M rollback test build.
 
-            Added in this version:
-            - System overview Temperature row fixed through tempinfo summary
-            - Dark-mode Argon table border softening
-            - Manual extroot helper scripts only: extroot-status and extroot-setup
-
-            Already included:
-            - USB storage / UAS
-            - block-mount
-            - ext4 filesystem support
-            - DiskMan
-            - OpenList
-            - luci-theme-argon
-            - ttyd
-            - common tools
+            Included:
             - F50 USB Ethernet drivers
             - WiFi
             - SFTP
+            - ttyd
+            - luci-theme-argon
+            - OpenList
+            - DiskMan
+            - common tools
 
-            Still not included:
-            - automatic extroot
-            - RAID / btrfs
-            - F50 auto bind script
+            Removed for this test:
+            - USB storage / UAS
+            - block-mount
+            - ext4 filesystem support
+            - tempinfo / custom temperature LuCI JS
+            - manual extroot scripts
+            - dark-line CSS patch
             - OpenClash
             - Docker
             - Turbo ACC
-            - usb-no-autosuspend
-            - xHCI reset scripts
           files: release-files/*
           draft: false
           prerelease: false
