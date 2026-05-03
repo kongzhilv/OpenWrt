@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan USBStorage TempInfo
+name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan USBStorage TempInfo ManualExtroot
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-wifi-sftp-ttyd-argon-openlist-diskman-usbstorage-tempinfo
+    name: build-f50-wifi-sftp-ttyd-argon-openlist-diskman-usbstorage-tempinfo-manual-extroot
     runs-on: ubuntu-22.04
 
     defaults:
@@ -152,7 +152,9 @@ jobs:
             grep -q '^CONFIG_PACKAGE_luci-theme-argon=y' .config
             test -d package/luci-theme-argon
             test -f files/etc/uci-defaults/02-set-argon-theme
+            test -f files/etc/uci-defaults/03-argon-dark-line-fix
             grep -q "/luci-static/argon" files/etc/uci-defaults/02-set-argon-theme
+            grep -q "custom-argon-dark-line-fix" files/etc/uci-defaults/03-argon-dark-line-fix
 
             echo "===== Required OpenList package ====="
             test -d package/openlist
@@ -208,15 +210,22 @@ jobs:
             find files -type f | sort
             test -f files/etc/uci-defaults/01-enable-wifi
             test -f files/etc/uci-defaults/02-set-argon-theme
+            test -f files/etc/uci-defaults/03-argon-dark-line-fix
             test -f files/sbin/tempinfo
             test -f files/usr/share/rpcd/acl.d/luci-app-tempinfo.json
-            test -f files/www/luci-static/resources/view/status/include/11_all_temperatures.js
+            test -f files/www/luci-static/resources/view/status/include/10_system.js
+            test -f files/usr/sbin/extroot-status
+            test -f files/usr/sbin/extroot-setup
+
             grep -q '/sys/class/thermal/thermal_zone' files/sbin/tempinfo
             grep -q '/sys/class/hwmon/hwmon' files/sbin/tempinfo
             grep -q '/sys/kernel/debug/ieee80211/phy' files/sbin/tempinfo
-            grep -q '/sbin/tempinfo' files/www/luci-static/resources/view/status/include/11_all_temperatures.js
+            grep -q '/sbin/tempinfo' files/www/luci-static/resources/view/status/include/10_system.js
+            grep -q 'Temperature' files/www/luci-static/resources/view/status/include/10_system.js
+            grep -q 'Type YES to continue' files/usr/sbin/extroot-setup
+            grep -q 'This script only reports status' files/usr/sbin/extroot-status
 
-            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme|files/sbin/tempinfo|files/usr/share/rpcd/acl.d/luci-app-tempinfo.json|files/www/luci-static/resources/view/status/include/11_all_temperatures.js)$' || true)"
+            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme|files/etc/uci-defaults/03-argon-dark-line-fix|files/sbin/tempinfo|files/usr/share/rpcd/acl.d/luci-app-tempinfo.json|files/www/luci-static/resources/view/status/include/10_system.js|files/usr/sbin/extroot-status|files/usr/sbin/extroot-setup)$' || true)"
             if [ -n "$bad_files" ]; then
               echo "ERROR: unexpected embedded files:"
               echo "$bad_files"
@@ -305,7 +314,7 @@ jobs:
       - name: Generate release tag
         if: env.UPLOAD_RELEASE == 'true'
         run: |
-          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_OpenList_DiskMan_USBStorage_TempInfo_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_OpenList_DiskMan_USBStorage_TempInfo_ExtrootManual_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: env.UPLOAD_RELEASE == 'true'
@@ -317,13 +326,14 @@ jobs:
             RAX3000M test build.
 
             Added in this version:
+            - System overview Temperature row fixed through tempinfo summary
+            - Dark-mode Argon table border softening
+            - Manual extroot helper scripts only: extroot-status and extroot-setup
+
+            Already included:
             - USB storage / UAS
             - block-mount
             - ext4 filesystem support
-            - LuCI all-readable-temperature panel
-            - tempinfo script for thermal_zone, hwmon and mt76 debugfs temperatures
-
-            Already included:
             - DiskMan
             - OpenList
             - luci-theme-argon
@@ -334,7 +344,7 @@ jobs:
             - SFTP
 
             Still not included:
-            - extroot scripts
+            - automatic extroot
             - RAID / btrfs
             - F50 auto bind script
             - OpenClash
