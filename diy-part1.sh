@@ -8,6 +8,7 @@ sed -i '/kenzo/d' feeds.conf.default
 sed -i '/small/d' feeds.conf.default
 sed -i '/fantastic/d' feeds.conf.default
 sed -i '/openlist/d' feeds.conf.default
+sed -i '/diskman/d' feeds.conf.default
 
 echo "===== feeds.conf.default ====="
 cat feeds.conf.default
