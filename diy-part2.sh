@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: RAX3000M F50 WiFi SFTP ttyd Argon OpenList DiskMan + USB storage + all temperatures ====="
+echo "===== DIY part2: RAX3000M F50 WiFi SFTP ttyd Argon OpenList DiskMan USB storage TempInfo + manual extroot scripts ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -28,6 +28,7 @@ git clone --depth 1 https://github.com/lisaac/luci-app-diskman.git package/luci-
 rm -rf files
 mkdir -p files/etc/uci-defaults
 mkdir -p files/sbin
+mkdir -p files/usr/sbin
 mkdir -p files/usr/share/rpcd/acl.d
 mkdir -p files/www/luci-static/resources/view/status/include
 
@@ -60,7 +61,7 @@ CONFIG_PACKAGE_openlist=y
 CONFIG_PACKAGE_luci-app-openlist=y
 CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y
 
-# DiskMan, no extroot scripts
+# DiskMan, no auto extroot
 CONFIG_PACKAGE_luci-app-diskman=y
 CONFIG_PACKAGE_luci-i18n-diskman-zh-cn=y
 CONFIG_PACKAGE_luci-compat=y
@@ -74,7 +75,7 @@ CONFIG_PACKAGE_losetup=y
 CONFIG_PACKAGE_e2fsprogs=y
 CONFIG_PACKAGE_smartmontools=y
 
-# USB storage/ext4 test step, still no extroot script
+# USB storage/ext4 test step, still no auto extroot
 CONFIG_PACKAGE_kmod-usb-storage=y
 CONFIG_PACKAGE_kmod-usb-storage-uas=y
 CONFIG_PACKAGE_block-mount=y
@@ -244,14 +245,104 @@ EOF_ARGON
 
 chmod +x files/etc/uci-defaults/02-set-argon-theme
 
+cat > files/etc/uci-defaults/03-argon-dark-line-fix <<'EOF_ARGON_CSS'
+#!/bin/sh
+
+logger -t argon-dark-line-fix "patch Argon dark table borders"
+
+MARK='/* custom-argon-dark-line-fix */'
+for css in /www/luci-static/argon/css/*.css /www/luci-static/argon/*.css; do
+    [ -f "$css" ] || continue
+    grep -q 'custom-argon-dark-line-fix' "$css" 2>/dev/null && continue
+    cat >> "$css" <<'EOF_CSS'
+/* custom-argon-dark-line-fix */
+@media (prefers-color-scheme: dark) {
+  .cbi-section table.table,
+  .cbi-section .table,
+  table.table,
+  .table {
+    border-color: rgba(255,255,255,.08) !important;
+  }
+  .cbi-section table.table tr,
+  .cbi-section table.table tr.tr,
+  .cbi-section .table .tr,
+  table.table tr,
+  table.table tr.tr,
+  .table .tr,
+  .td,
+  .th {
+    border-color: rgba(255,255,255,.08) !important;
+    box-shadow: none !important;
+  }
+}
+[data-theme="dark"] .cbi-section table.table,
+[data-theme="dark"] .cbi-section .table,
+[data-theme="dark"] table.table,
+[data-theme="dark"] .table,
+.dark .cbi-section table.table,
+.dark .cbi-section .table,
+.dark table.table,
+.dark .table {
+  border-color: rgba(255,255,255,.08) !important;
+}
+[data-theme="dark"] .cbi-section table.table tr,
+[data-theme="dark"] .cbi-section table.table tr.tr,
+[data-theme="dark"] .cbi-section .table .tr,
+[data-theme="dark"] table.table tr,
+[data-theme="dark"] table.table tr.tr,
+[data-theme="dark"] .table .tr,
+[data-theme="dark"] .td,
+[data-theme="dark"] .th,
+.dark .cbi-section table.table tr,
+.dark .cbi-section table.table tr.tr,
+.dark .cbi-section .table .tr,
+.dark table.table tr,
+.dark table.table tr.tr,
+.dark .table .tr,
+.dark .td,
+.dark .th {
+  border-color: rgba(255,255,255,.08) !important;
+  box-shadow: none !important;
+}
+EOF_CSS
+done
+
+rm -rf /tmp/luci-* /tmp/luci-indexcache 2>/dev/null || true
+logger -t argon-dark-line-fix "done"
+exit 0
+EOF_ARGON_CSS
+
+chmod +x files/etc/uci-defaults/03-argon-dark-line-fix
+
 cat > files/sbin/tempinfo <<'EOF_TEMPINFO'
 #!/bin/sh
+
+MODE="${1:-summary}"
 
 json_escape() {
     sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g; s/\r/\\r/g; s/\n/\\n/g'
 }
 
-emit_temp() {
+norm_c() {
+    awk -v t="$1" 'BEGIN { printf "%.1f", t / 1000 }'
+}
+
+first=1
+CPU_VALS=""
+WIFI_VALS=""
+OTHER_VALS=""
+
+append_val() {
+    local old="$1"
+    local val="$2"
+    if [ -n "$old" ]; then
+        printf '%s %s' "$old" "$val"
+    else
+        printf '%s' "$val"
+    fi
+}
+
+emit_json() {
     local name="$1"
     local path="$2"
     local raw="$3"
@@ -261,24 +352,62 @@ emit_temp() {
         ''|*[!0-9-]*) return ;;
     esac
 
-    # Linux thermal and hwmon temp*_input values are normally millidegree Celsius.
-    local celsius
-    celsius="$(awk -v t="$raw" 'BEGIN { printf "%.1f", t / 1000 }')"
-
-    local ename epath esrc
+    local celsius ename epath esrc
+    celsius="$(norm_c "$raw")"
     ename="$(printf '%s' "$name" | json_escape)"
     epath="$(printf '%s' "$path" | json_escape)"
     esrc="$(printf '%s' "$src" | json_escape)"
 
     [ "$first" = 0 ] && printf ',\n'
     first=0
-
     printf '    {"name":"%s","path":"%s","source":"%s","raw":%s,"celsius":%s}' \
         "$ename" "$epath" "$esrc" "$raw" "$celsius"
 }
 
-first=1
-printf '{"temps":[\n'
+emit_summary() {
+    local name="$1"
+    local raw="$2"
+    local src="$3"
+
+    case "$raw" in
+        ''|*[!0-9-]*) return ;;
+    esac
+
+    local celsius lower val
+    celsius="$(norm_c "$raw")"
+    val="${celsius}°C"
+    lower="$(printf '%s %s' "$name" "$src" | tr 'A-Z' 'a-z')"
+
+    case "$lower" in
+        *wifi*|*wi-fi*|*wlan*|*radio*|*mt76*|*phy0*|*phy1*|*ieee80211*)
+            WIFI_VALS="$(append_val "$WIFI_VALS" "$val")"
+        ;;
+        *cpu*)
+            CPU_VALS="$(append_val "$CPU_VALS" "$val")"
+        ;;
+        *soc*)
+            OTHER_VALS="$(append_val "$OTHER_VALS" "SoC: $val")"
+        ;;
+        *)
+            OTHER_VALS="$(append_val "$OTHER_VALS" "$name: $val")"
+        ;;
+    esac
+}
+
+handle_temp() {
+    local name="$1"
+    local path="$2"
+    local raw="$3"
+    local src="$4"
+
+    if [ "$MODE" = "json" ]; then
+        emit_json "$name" "$path" "$raw" "$src"
+    else
+        emit_summary "$name" "$raw" "$src"
+    fi
+}
+
+[ "$MODE" = "json" ] && printf '{"temps":[\n'
 
 # Generic Linux thermal zones: CPU, SoC, WiFi, board sensors, etc. when exposed by kernel.
 for z in /sys/class/thermal/thermal_zone*; do
@@ -286,7 +415,7 @@ for z in /sys/class/thermal/thermal_zone*; do
     raw="$(cat "$z/temp" 2>/dev/null | tr -d '[:space:]')"
     type="$(cat "$z/type" 2>/dev/null | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     [ -n "$type" ] || type="$(basename "$z")"
-    emit_temp "$type" "$z/temp" "$raw" "thermal"
+    handle_temp "$type" "$z/temp" "$raw" "thermal"
 done
 
 # Generic hwmon sensors. Some WiFi, switch, PMIC or board sensors may appear here.
@@ -301,7 +430,7 @@ for h in /sys/class/hwmon/hwmon*; do
         idx="$(basename "$t" | sed 's/^temp//;s/_input$//')"
         label="$(cat "$h/temp${idx}_label" 2>/dev/null | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
         [ -n "$label" ] || label="temp${idx}"
-        emit_temp "${chip} ${label}" "$t" "$raw" "hwmon"
+        handle_temp "${chip} ${label}" "$t" "$raw" "hwmon"
     done
 done
 
@@ -319,10 +448,19 @@ for p in /sys/kernel/debug/ieee80211/phy*/mt76/temperature /sys/kernel/debug/iee
 
     phy="$(printf '%s' "$p" | sed -n 's#.*/\(phy[0-9][0-9]*\)/.*#\1#p')"
     [ -n "$phy" ] || phy="WiFi"
-    emit_temp "${phy} WiFi" "$p" "$raw" "mt76-debugfs"
+    handle_temp "${phy} WiFi" "$p" "$raw" "mt76-debugfs"
 done
 
-printf '\n]}\n'
+if [ "$MODE" = "json" ]; then
+    printf '\n]}\n'
+else
+    OUT=""
+    [ -n "$CPU_VALS" ] && OUT="CPU: $CPU_VALS"
+    [ -n "$WIFI_VALS" ] && OUT="${OUT:+$OUT, }WiFi: $WIFI_VALS"
+    [ -n "$OTHER_VALS" ] && OUT="${OUT:+$OUT, }$OTHER_VALS"
+    [ -n "$OUT" ] || OUT="?"
+    printf '%s\n' "$OUT"
+fi
 EOF_TEMPINFO
 
 chmod +x files/sbin/tempinfo
@@ -343,66 +481,190 @@ cat > files/usr/share/rpcd/acl.d/luci-app-tempinfo.json <<'EOF_TEMPINFO_ACL'
 }
 EOF_TEMPINFO_ACL
 
-cat > files/www/luci-static/resources/view/status/include/11_all_temperatures.js <<'EOF_TEMPINFO_JS'
+# Override the System status card directly. Do not add a second Temperatures card.
+cat > files/www/luci-static/resources/view/status/include/10_system.js <<'EOF_SYSTEM_JS'
 'use strict';
 'require baseclass';
 'require fs';
-'require poll';
+'require rpc';
+'require uci';
 
-function formatTemp(t) {
-	var n = Number(t);
-	return isNaN(n) ? '?' : n.toFixed(1) + ' °C';
-}
+var callGetUnixtime = rpc.declare({
+	object: 'luci',
+	method: 'getUnixtime',
+	expect: { result: 0 }
+});
 
-function renderRows(data) {
-	var temps = (data && Array.isArray(data.temps)) ? data.temps : [];
+var callLuciVersion = rpc.declare({
+	object: 'luci',
+	method: 'getVersion'
+});
 
-	if (!temps.length) {
-		return E('em', _('No readable temperature sensors found.'));
-	}
+var callSystemBoard = rpc.declare({
+	object: 'system',
+	method: 'board'
+});
 
-	var rows = temps.map(function(t) {
-		return E('div', { 'class': 'tr' }, [
-			E('div', { 'class': 'td left' }, [ t.name || _('Unknown') ]),
-			E('div', { 'class': 'td left' }, [ formatTemp(t.celsius) ]),
-			E('div', { 'class': 'td left' }, [ t.source || '-' ])
-		]);
-	});
-
-	return E('div', { 'class': 'table' }, [
-		E('div', { 'class': 'tr table-titles' }, [
-			E('div', { 'class': 'th left' }, _('Sensor')),
-			E('div', { 'class': 'th left' }, _('Temperature')),
-			E('div', { 'class': 'th left' }, _('Source'))
-		]),
-		rows
-	]);
-}
+var callSystemInfo = rpc.declare({
+	object: 'system',
+	method: 'info'
+});
 
 return baseclass.extend({
-	title: _('Temperatures'),
+	title: _('System'),
 
 	load: function() {
-		return fs.exec_direct('/sbin/tempinfo', [ 'json' ], 'json').catch(function() {
-			return { temps: [] };
-		});
+		return Promise.all([
+			L.resolveDefault(callSystemBoard(), {}),
+			L.resolveDefault(callSystemInfo(), {}),
+			L.resolveDefault(callLuciVersion(), { revision: _('unknown version'), branch: 'LuCI' }),
+			L.resolveDefault(callGetUnixtime(), 0),
+			uci.load('system'),
+			L.resolveDefault(fs.exec_direct('/sbin/tempinfo', [ 'summary' ], 'text'), '?')
+		]);
 	},
 
 	render: function(data) {
-		poll.add(L.bind(function() {
-			return fs.exec_direct('/sbin/tempinfo', [ 'json' ], 'json').then(L.bind(function(newdata) {
-				var node = document.getElementById('all-temperatures-table');
-				if (node)
-					node.replaceChildren(renderRows(newdata));
-			}, this)).catch(function() {});
-		}, this), 5);
+		var boardinfo = data[0],
+		    systeminfo = data[1],
+		    luciversion = data[2],
+		    unixtime = data[3],
+		    temperatures = (data[5] || '?').trim();
 
-		return E('div', { 'class': 'cbi-section' }, [
-			E('h3', _('Temperatures')),
-			E('div', { 'id': 'all-temperatures-table' }, [ renderRows(data) ])
-		]);
+		luciversion = luciversion.branch + ' ' + luciversion.revision;
+
+		var datestr = null;
+		if (unixtime) {
+			var date = new Date(unixtime * 1000),
+			    zn = uci.get('system', '@system[0]', 'zonename')?.replaceAll(' ', '_') || 'UTC',
+			    ts = uci.get('system', '@system[0]', 'clock_timestyle') || 0,
+			    hc = uci.get('system', '@system[0]', 'clock_hourcycle') || 0;
+
+			datestr = new Intl.DateTimeFormat(undefined, {
+				dateStyle: 'medium',
+				timeStyle: (ts == 0) ? 'long' : 'full',
+				hourCycle: (hc == 0) ? undefined : hc,
+				timeZone: zn
+			}).format(date);
+		}
+
+		var fields = [
+			_('Hostname'),         boardinfo.hostname,
+			_('Model'),            boardinfo.model,
+			_('Architecture'),     boardinfo.system,
+			_('Temperature'),      temperatures || '?',
+			_('Target Platform'),  (L.isObject(boardinfo.release) ? boardinfo.release.target : ''),
+			_('Firmware Version'), (L.isObject(boardinfo.release) ? boardinfo.release.description + ' / ' : '') + (luciversion || ''),
+			_('Kernel Version'),   boardinfo.kernel,
+			_('Local Time'),       datestr,
+			_('Uptime'),           systeminfo.uptime ? '%t'.format(systeminfo.uptime) : null,
+			_('Load Average'),     Array.isArray(systeminfo.load) ? '%.2f, %.2f, %.2f'.format(
+								systeminfo.load[0] / 65535.0,
+								systeminfo.load[1] / 65535.0,
+								systeminfo.load[2] / 65535.0) : null
+		];
+
+		var table = E('table', { 'class': 'table' });
+
+		for (var i = 0; i < fields.length; i += 2) {
+			table.appendChild(E('tr', { 'class': 'tr' }, [
+				E('td', { 'class': 'td left', 'width': '33%' }, [ fields[i] ]),
+				E('td', { 'class': 'td left' }, [ (fields[i + 1] != null) ? fields[i + 1] : '?' ])
+			]));
+		}
+
+		return table;
 	}
 });
-EOF_TEMPINFO_JS
+EOF_SYSTEM_JS
+
+cat > files/usr/sbin/extroot-status <<'EOF_EXTROOT_STATUS'
+#!/bin/sh
+
+echo "===== extroot status ====="
+echo "rootfs: $(mount | awk '$3=="/" {print $1, $5}')"
+echo "overlay: $(mount | awk '$3=="/overlay" {print $1, $5}')"
+echo
+
+echo "===== block info ====="
+block info 2>/dev/null || true
+echo
+
+echo "===== fstab ====="
+uci show fstab 2>/dev/null || true
+echo
+
+echo "===== candidate ext4 partitions ====="
+for d in /dev/mmcblk*p* /dev/sd[a-z][0-9]*; do
+    [ -b "$d" ] || continue
+    info="$(block info "$d" 2>/dev/null || true)"
+    echo "$d $info"
+done
+
+echo
+echo "This script only reports status. It does not modify disks."
+EOF_EXTROOT_STATUS
+
+chmod +x files/usr/sbin/extroot-status
+
+cat > files/usr/sbin/extroot-setup <<'EOF_EXTROOT_SETUP'
+#!/bin/sh
+set -e
+
+usage() {
+    cat <<'EOF'
+Usage:
+  extroot-setup /dev/mmcblk0pX
+  extroot-setup /dev/sdXN
+
+This is a MANUAL extroot helper.
+It will format the target partition as ext4 and copy the current overlay.
+It will not run automatically at boot.
+EOF
+}
+
+DEV="$1"
+[ -n "$DEV" ] || { usage; exit 1; }
+[ -b "$DEV" ] || { echo "ERROR: block device not found: $DEV"; exit 1; }
+
+case "$DEV" in
+    /dev/mmcblk*p*|/dev/sd[a-z][0-9]*) ;;
+    *) echo "ERROR: refuse suspicious target: $DEV"; exit 1 ;;
+esac
+
+echo "WARNING: this will erase $DEV"
+echo "Type YES to continue:"
+read ans
+[ "$ans" = "YES" ] || { echo "cancelled"; exit 1; }
+
+umount "$DEV" 2>/dev/null || true
+mkfs.ext4 -F "$DEV"
+mkdir -p /mnt/extroot
+mount "$DEV" /mnt/extroot
+
+echo "Copy current overlay to $DEV ..."
+tar -C /overlay -cf - . | tar -C /mnt/extroot -xf -
+
+UUID="$(block info "$DEV" | sed -n "s/.*UUID=\"\([^\"]*\)\".*/\1/p")"
+[ -n "$UUID" ] || { echo "ERROR: cannot get UUID for $DEV"; exit 1; }
+
+uci -q delete fstab.extroot || true
+uci set fstab.extroot='mount'
+uci set fstab.extroot.uuid="$UUID"
+uci set fstab.extroot.target='/overlay'
+uci set fstab.extroot.fstype='ext4'
+uci set fstab.extroot.options='rw,sync,noatime'
+uci set fstab.extroot.enabled='1'
+uci set fstab.extroot.enabled_fsck='0'
+uci commit fstab
+
+sync
+umount /mnt/extroot
+
+echo "Done. Reboot manually to test extroot: reboot"
+echo "If boot fails, recover by removing/changing the fstab extroot entry."
+EOF_EXTROOT_SETUP
+
+chmod +x files/usr/sbin/extroot-setup
 
 echo "===== DIY part2 done ====="
