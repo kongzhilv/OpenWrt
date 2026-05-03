@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList
+name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-wifi-sftp-ttyd-argon-openlist
+    name: build-f50-wifi-sftp-ttyd-argon-openlist-diskman
     runs-on: ubuntu-22.04
 
     defaults:
@@ -159,6 +159,15 @@ jobs:
             grep -q '^CONFIG_PACKAGE_luci-app-openlist=y' .config
             grep -q '^CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y' .config
 
+            echo "===== Required DiskMan package ====="
+            test -d package/luci-app-diskman
+            grep -q '^CONFIG_PACKAGE_luci-app-diskman=y' .config
+            grep -q '^CONFIG_PACKAGE_luci-compat=y' .config
+            grep -q '^CONFIG_PACKAGE_luci-lib-ipkg=y' .config
+            grep -q '^CONFIG_PACKAGE_parted=y' .config
+            grep -q '^CONFIG_PACKAGE_e2fsprogs=y' .config
+            grep -q '^CONFIG_PACKAGE_smartmontools=y' .config
+
             echo "===== Required ttyd packages ====="
             grep -q '^CONFIG_PACKAGE_ttyd=y' .config
             grep -q '^CONFIG_PACKAGE_luci-app-ttyd=y' .config
@@ -201,13 +210,15 @@ jobs:
             echo "===== Still disabled custom stack ====="
             ! grep -q '^CONFIG_PACKAGE_luci-app-argon-config=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-openclash=y' .config
-            ! grep -q '^CONFIG_PACKAGE_luci-app-diskman=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc=y' .config
             ! grep -q '^CONFIG_PACKAGE_dockerd=y' .config
             ! grep -q '^CONFIG_PACKAGE_docker-compose=y' .config
             ! grep -q '^CONFIG_PACKAGE_block-mount=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-usb-storage=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-usb-storage-uas=y' .config
+            ! grep -q '^CONFIG_PACKAGE_btrfs-progs=y' .config
+            ! grep -q '^CONFIG_PACKAGE_mdadm=y' .config
+            ! grep -q '^CONFIG_PACKAGE_kmod-md-raid456=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-usb-net-cdc-mbim=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-usb-wdm=y' .config
@@ -281,7 +292,7 @@ jobs:
       - name: Generate release tag
         if: env.UPLOAD_RELEASE == 'true'
         run: |
-          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_OpenList_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_OpenList_DiskMan_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: env.UPLOAD_RELEASE == 'true'
@@ -293,27 +304,26 @@ jobs:
             RAX3000M test build.
 
             Added in this version:
-            - OpenList
-            - luci-app-openlist
-            - luci-i18n-openlist-zh-cn
-            - OpenListTeam golang feed replacement
+            - luci-app-diskman
+            - Disk tools: parted, fdisk, blkid, lsblk, partx-utils, losetup, e2fsprogs, smartmontools
 
             Already included:
+            - OpenList
             - luci-theme-argon
             - ttyd
-            - luci-app-ttyd
             - common tools
             - F50 USB Ethernet drivers
             - WiFi
             - SFTP
 
             Still not included:
+            - extroot scripts
+            - USB storage / UAS
+            - RAID / btrfs
             - F50 auto bind script
             - OpenClash
             - Docker
-            - DiskMan
             - Turbo ACC
-            - extroot
             - usb-no-autosuspend
             - xHCI reset scripts
           files: release-files/*
