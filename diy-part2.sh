@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: RAX3000M F50 WiFi SFTP ttyd tools Argon + OpenList ====="
+echo "===== DIY part2: RAX3000M F50 WiFi SFTP ttyd Argon OpenList + DiskMan ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -19,6 +19,10 @@ fi
 
 rm -rf package/openlist
 git clone --depth 1 https://github.com/OpenListTeam/OpenList-OpenWRT.git package/openlist
+
+echo "===== Add DiskMan source ====="
+rm -rf package/luci-app-diskman
+git clone --depth 1 https://github.com/lisaac/luci-app-diskman.git package/luci-app-diskman
 
 # 清掉旧 files，避免旧 F50/extroot/OpenClash 脚本进入固件
 rm -rf files
@@ -51,6 +55,20 @@ CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y
 CONFIG_PACKAGE_openlist=y
 CONFIG_PACKAGE_luci-app-openlist=y
 CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y
+
+# DiskMan, no extroot scripts
+CONFIG_PACKAGE_luci-app-diskman=y
+CONFIG_PACKAGE_luci-i18n-diskman-zh-cn=y
+CONFIG_PACKAGE_luci-compat=y
+CONFIG_PACKAGE_luci-lib-ipkg=y
+CONFIG_PACKAGE_parted=y
+CONFIG_PACKAGE_fdisk=y
+CONFIG_PACKAGE_blkid=y
+CONFIG_PACKAGE_lsblk=y
+CONFIG_PACKAGE_partx-utils=y
+CONFIG_PACKAGE_losetup=y
+CONFIG_PACKAGE_e2fsprogs=y
+CONFIG_PACKAGE_smartmontools=y
 
 # Common tools
 CONFIG_PACKAGE_bash=y
@@ -103,6 +121,17 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 
 # Not enabled in this step
 # CONFIG_PACKAGE_luci-app-argon-config is not set
+# CONFIG_PACKAGE_kmod-usb-storage is not set
+# CONFIG_PACKAGE_kmod-usb-storage-uas is not set
+# CONFIG_PACKAGE_block-mount is not set
+# CONFIG_PACKAGE_kmod-fs-ext4 is not set
+# CONFIG_PACKAGE_btrfs-progs is not set
+# CONFIG_PACKAGE_mdadm is not set
+# CONFIG_PACKAGE_kmod-md-linear is not set
+# CONFIG_PACKAGE_kmod-md-raid0 is not set
+# CONFIG_PACKAGE_kmod-md-raid1 is not set
+# CONFIG_PACKAGE_kmod-md-raid10 is not set
+# CONFIG_PACKAGE_kmod-md-raid456 is not set
 # CONFIG_PACKAGE_kmod-usb-net-cdc-mbim is not set
 # CONFIG_PACKAGE_kmod-usb-net-qmi-wwan is not set
 # CONFIG_PACKAGE_kmod-usb-wdm is not set
@@ -117,19 +146,12 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 
 # Still disabled
 # CONFIG_PACKAGE_luci-app-openclash is not set
-# CONFIG_PACKAGE_luci-app-diskman is not set
 # CONFIG_PACKAGE_luci-app-turboacc is not set
 # CONFIG_PACKAGE_luci-app-lucky is not set
 # CONFIG_PACKAGE_luci-app-eqosplus is not set
 # CONFIG_PACKAGE_dockerd is not set
 # CONFIG_PACKAGE_docker-compose is not set
 # CONFIG_PACKAGE_luci-app-dockerman is not set
-# CONFIG_PACKAGE_block-mount is not set
-# CONFIG_PACKAGE_e2fsprogs is not set
-# CONFIG_PACKAGE_parted is not set
-# CONFIG_PACKAGE_kmod-fs-ext4 is not set
-# CONFIG_PACKAGE_kmod-usb-storage is not set
-# CONFIG_PACKAGE_kmod-usb-storage-uas is not set
 EOF_CONFIG
 
 cat > files/etc/uci-defaults/01-enable-wifi <<'EOF_WIFI'
