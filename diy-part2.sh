@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: RAX3000M F50 WiFi SFTP ttyd Argon OpenList + DiskMan ====="
+echo "===== DIY part2: RAX3000M F50 WiFi SFTP ttyd Argon OpenList DiskMan + USB storage + all temperatures ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -27,6 +27,9 @@ git clone --depth 1 https://github.com/lisaac/luci-app-diskman.git package/luci-
 # 清掉旧 files，避免旧 F50/extroot/OpenClash 脚本进入固件
 rm -rf files
 mkdir -p files/etc/uci-defaults
+mkdir -p files/sbin
+mkdir -p files/usr/share/rpcd/acl.d
+mkdir -p files/www/luci-static/resources/view/status/include
 
 # 直接重写 .config，避免 openwrt_one 或旧包残留
 cat > .config <<'EOF_CONFIG'
@@ -39,6 +42,7 @@ CONFIG_TARGET_ROOTFS_SQUASHFS=y
 CONFIG_PACKAGE_luci=y
 CONFIG_LUCI_LANG_zh_Hans=y
 CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+CONFIG_PACKAGE_rpcd-mod-file=y
 
 # LuCI Argon theme
 CONFIG_PACKAGE_luci-theme-argon=y
@@ -69,6 +73,16 @@ CONFIG_PACKAGE_partx-utils=y
 CONFIG_PACKAGE_losetup=y
 CONFIG_PACKAGE_e2fsprogs=y
 CONFIG_PACKAGE_smartmontools=y
+
+# USB storage/ext4 test step, still no extroot script
+CONFIG_PACKAGE_kmod-usb-storage=y
+CONFIG_PACKAGE_kmod-usb-storage-uas=y
+CONFIG_PACKAGE_block-mount=y
+CONFIG_PACKAGE_kmod-fs-ext4=y
+CONFIG_PACKAGE_kmod-nls-base=y
+CONFIG_PACKAGE_kmod-scsi-core=y
+CONFIG_PACKAGE_kmod-lib-crc16=y
+CONFIG_PACKAGE_mount-utils=y
 
 # Common tools
 CONFIG_PACKAGE_bash=y
@@ -121,10 +135,6 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 
 # Not enabled in this step
 # CONFIG_PACKAGE_luci-app-argon-config is not set
-# CONFIG_PACKAGE_kmod-usb-storage is not set
-# CONFIG_PACKAGE_kmod-usb-storage-uas is not set
-# CONFIG_PACKAGE_block-mount is not set
-# CONFIG_PACKAGE_kmod-fs-ext4 is not set
 # CONFIG_PACKAGE_btrfs-progs is not set
 # CONFIG_PACKAGE_mdadm is not set
 # CONFIG_PACKAGE_kmod-md-linear is not set
@@ -233,5 +243,166 @@ exit 0
 EOF_ARGON
 
 chmod +x files/etc/uci-defaults/02-set-argon-theme
+
+cat > files/sbin/tempinfo <<'EOF_TEMPINFO'
+#!/bin/sh
+
+json_escape() {
+    sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g; s/\r/\\r/g; s/\n/\\n/g'
+}
+
+emit_temp() {
+    local name="$1"
+    local path="$2"
+    local raw="$3"
+    local src="$4"
+
+    case "$raw" in
+        ''|*[!0-9-]*) return ;;
+    esac
+
+    # Linux thermal and hwmon temp*_input values are normally millidegree Celsius.
+    local celsius
+    celsius="$(awk -v t="$raw" 'BEGIN { printf "%.1f", t / 1000 }')"
+
+    local ename epath esrc
+    ename="$(printf '%s' "$name" | json_escape)"
+    epath="$(printf '%s' "$path" | json_escape)"
+    esrc="$(printf '%s' "$src" | json_escape)"
+
+    [ "$first" = 0 ] && printf ',\n'
+    first=0
+
+    printf '    {"name":"%s","path":"%s","source":"%s","raw":%s,"celsius":%s}' \
+        "$ename" "$epath" "$esrc" "$raw" "$celsius"
+}
+
+first=1
+printf '{"temps":[\n'
+
+# Generic Linux thermal zones: CPU, SoC, WiFi, board sensors, etc. when exposed by kernel.
+for z in /sys/class/thermal/thermal_zone*; do
+    [ -r "$z/temp" ] || continue
+    raw="$(cat "$z/temp" 2>/dev/null | tr -d '[:space:]')"
+    type="$(cat "$z/type" 2>/dev/null | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [ -n "$type" ] || type="$(basename "$z")"
+    emit_temp "$type" "$z/temp" "$raw" "thermal"
+done
+
+# Generic hwmon sensors. Some WiFi, switch, PMIC or board sensors may appear here.
+for h in /sys/class/hwmon/hwmon*; do
+    [ -d "$h" ] || continue
+    chip="$(cat "$h/name" 2>/dev/null | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [ -n "$chip" ] || chip="$(basename "$h")"
+
+    for t in "$h"/temp*_input; do
+        [ -r "$t" ] || continue
+        raw="$(cat "$t" 2>/dev/null | tr -d '[:space:]')"
+        idx="$(basename "$t" | sed 's/^temp//;s/_input$//')"
+        label="$(cat "$h/temp${idx}_label" 2>/dev/null | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        [ -n "$label" ] || label="temp${idx}"
+        emit_temp "${chip} ${label}" "$t" "$raw" "hwmon"
+    done
+done
+
+# mt76 debugfs WiFi temperature paths, if debugfs is mounted and the driver exposes them.
+for p in /sys/kernel/debug/ieee80211/phy*/mt76/temperature /sys/kernel/debug/ieee80211/phy*/mt76/temp; do
+    [ -r "$p" ] || continue
+    raw_text="$(cat "$p" 2>/dev/null | tr -d '\r')"
+    raw="$(printf '%s' "$raw_text" | grep -Eo -- '-?[0-9]+' | head -n 1)"
+    [ -n "$raw" ] || continue
+
+    # Some debugfs values may be Celsius instead of millidegree. Normalize small values.
+    if [ "$raw" -gt -200 ] 2>/dev/null && [ "$raw" -lt 200 ] 2>/dev/null; then
+        raw=$((raw * 1000))
+    fi
+
+    phy="$(printf '%s' "$p" | sed -n 's#.*/\(phy[0-9][0-9]*\)/.*#\1#p')"
+    [ -n "$phy" ] || phy="WiFi"
+    emit_temp "${phy} WiFi" "$p" "$raw" "mt76-debugfs"
+done
+
+printf '\n]}\n'
+EOF_TEMPINFO
+
+chmod +x files/sbin/tempinfo
+
+cat > files/usr/share/rpcd/acl.d/luci-app-tempinfo.json <<'EOF_TEMPINFO_ACL'
+{
+  "luci-app-tempinfo": {
+    "description": "Grant LuCI access to readable system temperature sensors",
+    "read": {
+      "ubus": {
+        "file": [ "exec" ]
+      },
+      "file": {
+        "/sbin/tempinfo": [ "exec" ]
+      }
+    }
+  }
+}
+EOF_TEMPINFO_ACL
+
+cat > files/www/luci-static/resources/view/status/include/11_all_temperatures.js <<'EOF_TEMPINFO_JS'
+'use strict';
+'require baseclass';
+'require fs';
+'require poll';
+
+function formatTemp(t) {
+	var n = Number(t);
+	return isNaN(n) ? '?' : n.toFixed(1) + ' °C';
+}
+
+function renderRows(data) {
+	var temps = (data && Array.isArray(data.temps)) ? data.temps : [];
+
+	if (!temps.length) {
+		return E('em', _('No readable temperature sensors found.'));
+	}
+
+	var rows = temps.map(function(t) {
+		return E('div', { 'class': 'tr' }, [
+			E('div', { 'class': 'td left' }, [ t.name || _('Unknown') ]),
+			E('div', { 'class': 'td left' }, [ formatTemp(t.celsius) ]),
+			E('div', { 'class': 'td left' }, [ t.source || '-' ])
+		]);
+	});
+
+	return E('div', { 'class': 'table' }, [
+		E('div', { 'class': 'tr table-titles' }, [
+			E('div', { 'class': 'th left' }, _('Sensor')),
+			E('div', { 'class': 'th left' }, _('Temperature')),
+			E('div', { 'class': 'th left' }, _('Source'))
+		]),
+		rows
+	]);
+}
+
+return baseclass.extend({
+	title: _('Temperatures'),
+
+	load: function() {
+		return fs.exec_direct('/sbin/tempinfo', [ 'json' ], 'json').catch(function() {
+			return { temps: [] };
+		});
+	},
+
+	render: function(data) {
+		poll.add(L.bind(function() {
+			return fs.exec_direct('/sbin/tempinfo', [ 'json' ], 'json').then(L.bind(function(newdata) {
+				var node = document.getElementById('all-temperatures-table');
+				if (node)
+					node.replaceChildren(renderRows(newdata));
+			}, this)).catch(function() {});
+		}, this), 5);
+
+		return E('div', { 'class': 'cbi-section' }, [
+			E('h3', _('Temperatures')),
+			E('div', { 'id': 'all-temperatures-table' }, [ renderRows(data) ])
+		]);
+	}
+});
+EOF_TEMPINFO_JS
 
 echo "===== DIY part2 done ====="
