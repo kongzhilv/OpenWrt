@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan OnlyTest
+name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan USBStorageOnlyTest
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-wifi-sftp-ttyd-argon-openlist-diskman-only-test
+    name: build-f50-wifi-sftp-ttyd-argon-openlist-diskman-usb-storage-only-test
     runs-on: ubuntu-22.04
 
     defaults:
@@ -173,6 +173,9 @@ jobs:
             grep -q '^CONFIG_PACKAGE_e2fsprogs=y' .config
             grep -q '^CONFIG_PACKAGE_smartmontools=y' .config
 
+            echo "===== Required USB storage driver only ====="
+            grep -q '^CONFIG_PACKAGE_kmod-usb-storage=y' .config
+
             echo "===== Required ttyd packages ====="
             grep -q '^CONFIG_PACKAGE_ttyd=y' .config
             grep -q '^CONFIG_PACKAGE_luci-app-ttyd=y' .config
@@ -212,10 +215,9 @@ jobs:
               exit 1
             fi
 
-            echo "===== Must remain removed in this DiskMan-only test ====="
+            echo "===== Must remain removed in this USBStorageOnlyTest ====="
             ! grep -q '^CONFIG_PACKAGE_rpcd-mod-file=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-argon-config=y' .config
-            ! grep -q '^CONFIG_PACKAGE_kmod-usb-storage=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-usb-storage-uas=y' .config
             ! grep -q '^CONFIG_PACKAGE_block-mount=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-fs-ext4=y' .config
@@ -307,7 +309,7 @@ jobs:
       - name: Generate release tag
         if: env.UPLOAD_RELEASE == 'true'
         run: |
-          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_OpenList_DiskMan_OnlyTest_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_OpenList_DiskMan_USBStorageOnlyTest_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: env.UPLOAD_RELEASE == 'true'
@@ -316,7 +318,10 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           body: |
-            RAX3000M DiskMan-only test build.
+            RAX3000M USBStorageOnlyTest build.
+
+            Added in this version:
+            - kmod-usb-storage only
 
             Included:
             - F50 USB Ethernet drivers
@@ -333,7 +338,7 @@ jobs:
             - luci-app-argon-config
             - tempinfo / custom temperature LuCI JS
             - dark-line CSS patch
-            - USB storage / UAS
+            - USB storage UAS
             - block-mount
             - ext4 filesystem support
             - manual extroot scripts
