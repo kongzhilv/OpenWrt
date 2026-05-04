@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan RollbackTest
+name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan UITempInfoTest
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-wifi-sftp-ttyd-argon-openlist-diskman-rollback-test
+    name: build-f50-wifi-sftp-ttyd-argon-openlist-diskman-ui-tempinfo-test
     runs-on: ubuntu-22.04
 
     defaults:
@@ -142,16 +142,21 @@ jobs:
             ! grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one=y' .config
             ! grep -q '^CONFIG_TARGET_PROFILE="DEVICE_openwrt_one"' .config
 
-            echo "===== Required base packages ====="
+            echo "===== Required base/UI packages ====="
             grep -q '^CONFIG_PACKAGE_luci=y' .config
             grep -q '^CONFIG_PACKAGE_luci-i18n-base-zh-cn=y' .config
+            grep -q '^CONFIG_PACKAGE_rpcd-mod-file=y' .config
             grep -q '^CONFIG_PACKAGE_openssh-sftp-server=y' .config
 
             echo "===== Required Argon package ====="
             grep -q '^CONFIG_PACKAGE_luci-theme-argon=y' .config
+            grep -q '^CONFIG_PACKAGE_luci-app-argon-config=y' .config
             test -d package/luci-theme-argon
+            test -d package/luci-app-argon-config
             test -f files/etc/uci-defaults/02-set-argon-theme
+            test -f files/etc/uci-defaults/03-argon-dark-line-fix
             grep -q "/luci-static/argon" files/etc/uci-defaults/02-set-argon-theme
+            grep -q "custom-argon-dark-line-fix" files/etc/uci-defaults/03-argon-dark-line-fix
 
             echo "===== Required OpenList package ====="
             test -d package/openlist
@@ -200,22 +205,29 @@ jobs:
             find files -type f | sort
             test -f files/etc/uci-defaults/01-enable-wifi
             test -f files/etc/uci-defaults/02-set-argon-theme
+            test -f files/etc/uci-defaults/03-argon-dark-line-fix
+            test -f files/sbin/tempinfo
+            test -f files/usr/share/rpcd/acl.d/luci-app-tempinfo.json
+            test -f files/www/luci-static/resources/view/status/include/10_system.js
+            grep -q '/sys/class/thermal/thermal_zone' files/sbin/tempinfo
+            grep -q '/sys/class/hwmon/hwmon' files/sbin/tempinfo
+            grep -q '/sys/kernel/debug/ieee80211/phy' files/sbin/tempinfo
+            grep -q '/sbin/tempinfo' files/www/luci-static/resources/view/status/include/10_system.js
+            grep -q 'Temperature' files/www/luci-static/resources/view/status/include/10_system.js
 
-            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme)$' || true)"
+            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme|files/etc/uci-defaults/03-argon-dark-line-fix|files/sbin/tempinfo|files/usr/share/rpcd/acl.d/luci-app-tempinfo.json|files/www/luci-static/resources/view/status/include/10_system.js)$' || true)"
             if [ -n "$bad_files" ]; then
               echo "ERROR: unexpected embedded files:"
               echo "$bad_files"
               exit 1
             fi
 
-            echo "===== Must be removed in this rollback test ====="
-            ! grep -q '^CONFIG_PACKAGE_rpcd-mod-file=y' .config
+            echo "===== Must remain removed in this UI test ====="
             ! grep -q '^CONFIG_PACKAGE_kmod-usb-storage=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-usb-storage-uas=y' .config
             ! grep -q '^CONFIG_PACKAGE_block-mount=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-fs-ext4=y' .config
             ! grep -q '^CONFIG_PACKAGE_mount-utils=y' .config
-            ! grep -q '^CONFIG_PACKAGE_luci-app-argon-config=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-openclash=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc=y' .config
             ! grep -q '^CONFIG_PACKAGE_dockerd=y' .config
@@ -229,13 +241,9 @@ jobs:
             ! grep -q '^CONFIG_PACKAGE_kmod-usb-serial=y' .config
             ! grep -q '^CONFIG_PACKAGE_usb-modeswitch=y' .config
             ! grep -q '^CONFIG_PACKAGE_usbmuxd=y' .config
-            ! test -e files/sbin/tempinfo
-            ! test -e files/usr/share/rpcd/acl.d/luci-app-tempinfo.json
-            ! test -e files/www/luci-static/resources/view/status/include/10_system.js
             ! test -e files/www/luci-static/resources/view/status/include/11_all_temperatures.js
             ! test -e files/usr/sbin/extroot-status
             ! test -e files/usr/sbin/extroot-setup
-            ! test -e files/etc/uci-defaults/03-argon-dark-line-fix
 
             echo "Validate passed."
           } 2>&1 | tee logs/07_validate_config.log
@@ -303,7 +311,7 @@ jobs:
       - name: Generate release tag
         if: env.UPLOAD_RELEASE == 'true'
         run: |
-          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_OpenList_DiskMan_RollbackTest_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_OpenList_DiskMan_UITempInfoTest_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: env.UPLOAD_RELEASE == 'true'
@@ -312,25 +320,20 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           body: |
-            RAX3000M rollback test build.
+            RAX3000M UI/tempinfo test build.
 
-            Included:
-            - F50 USB Ethernet drivers
-            - WiFi
-            - SFTP
-            - ttyd
-            - luci-theme-argon
-            - OpenList
-            - DiskMan
-            - common tools
+            Added back in this version:
+            - rpcd-mod-file
+            - luci-app-argon-config
+            - tempinfo script
+            - System overview Temperature row through 10_system.js
+            - Argon dark-mode table border softening
 
-            Removed for this test:
+            Still removed for this test:
             - USB storage / UAS
             - block-mount
             - ext4 filesystem support
-            - tempinfo / custom temperature LuCI JS
             - manual extroot scripts
-            - dark-line CSS patch
             - OpenClash
             - Docker
             - Turbo ACC
