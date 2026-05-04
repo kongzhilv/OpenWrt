@@ -1,15 +1,14 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part1: pre-feeds cleanup + Argon source only ====="
+echo "===== DIY part1: pre-feeds cleanup + Argon UI sources ====="
 
 # 这个脚本运行在 ./scripts/feeds update -a 之前。
 # 这里只处理 feeds update 前必须完成的内容：
 # 1. 清理旧分支残留的第三方 feeds 配置；
 # 2. 预拉取不依赖 feeds install 的独立 package 源。
 #
-# 注意：
-# OpenList、DiskMan、.config、files/、温度修复、手动 extroot 脚本都在 diy-part2.sh 处理。
+# OpenList、DiskMan、.config、files/、温度修复都在 diy-part2.sh 处理。
 # 不要把需要 feeds install 后处理的内容放在这里。
 
 if [ ! -f feeds.conf.default ]; then
@@ -36,6 +35,15 @@ git clone --depth 1 -b master https://github.com/jerrykuku/luci-theme-argon.git 
 
 if [ ! -f package/luci-theme-argon/Makefile ]; then
     echo "ERROR: luci-theme-argon Makefile missing"
+    exit 1
+fi
+
+echo "===== Add luci-app-argon-config source ====="
+rm -rf package/luci-app-argon-config
+git clone --depth 1 -b master https://github.com/jerrykuku/luci-app-argon-config.git package/luci-app-argon-config
+
+if [ ! -f package/luci-app-argon-config/Makefile ]; then
+    echo "ERROR: luci-app-argon-config Makefile missing"
     exit 1
 fi
 
