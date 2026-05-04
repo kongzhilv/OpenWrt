@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: DiskMan-only test - RAX3000M F50 WiFi SFTP ttyd Argon OpenList DiskMan ====="
+echo "===== DIY part2: kmod-usb-storage-only test - RAX3000M F50 WiFi SFTP ttyd Argon OpenList DiskMan ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -56,7 +56,7 @@ CONFIG_PACKAGE_openlist=y
 CONFIG_PACKAGE_luci-app-openlist=y
 CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y
 
-# DiskMan only test
+# DiskMan
 CONFIG_PACKAGE_luci-app-diskman=y
 CONFIG_PACKAGE_luci-i18n-diskman-zh-cn=y
 CONFIG_PACKAGE_luci-compat=y
@@ -69,6 +69,9 @@ CONFIG_PACKAGE_partx-utils=y
 CONFIG_PACKAGE_losetup=y
 CONFIG_PACKAGE_e2fsprogs=y
 CONFIG_PACKAGE_smartmontools=y
+
+# USB storage driver only test, no UAS, no block-mount, no ext4, no extroot
+CONFIG_PACKAGE_kmod-usb-storage=y
 
 # Common tools
 CONFIG_PACKAGE_bash=y
@@ -119,10 +122,9 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
 CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y
 CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 
-# Must stay disabled in DiskMan-only test
+# Must stay disabled in USBStorageOnlyTest
 # CONFIG_PACKAGE_rpcd-mod-file is not set
 # CONFIG_PACKAGE_luci-app-argon-config is not set
-# CONFIG_PACKAGE_kmod-usb-storage is not set
 # CONFIG_PACKAGE_kmod-usb-storage-uas is not set
 # CONFIG_PACKAGE_block-mount is not set
 # CONFIG_PACKAGE_kmod-fs-ext4 is not set
