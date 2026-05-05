@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList MinimalDiskManTest
+name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList FixedMinimalDiskManTest
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-wifi-sftp-ttyd-argon-openlist-minimal-diskman-test
+    name: build-f50-wifi-sftp-ttyd-argon-openlist-fixed-minimal-diskman-test
     runs-on: ubuntu-22.04
 
     defaults:
@@ -160,7 +160,7 @@ jobs:
             grep -q '^CONFIG_PACKAGE_luci-app-openlist=y' .config
             grep -q '^CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y' .config
 
-            echo "===== Required minimal DiskMan package ====="
+            echo "===== Required fixed minimal DiskMan package ====="
             test -d package/luci-app-diskman
             grep -q '^CONFIG_PACKAGE_luci-app-diskman=y' .config
             grep -q '^CONFIG_PACKAGE_luci-i18n-diskman-zh-cn=y' .config
@@ -212,7 +212,12 @@ jobs:
               exit 1
             fi
 
-            echo "===== Must remain removed in this MinimalDiskManTest ====="
+            echo "===== Must remain removed in this FixedMinimalDiskManTest ====="
+            ! grep -q '^CONFIG_PACKAGE_luci-app-diskman_INCLUDE_ntfs_3g_utils=y' .config
+            ! grep -q '^CONFIG_PACKAGE_luci-app-diskman_INCLUDE_btrfs_progs=y' .config
+            ! grep -q '^CONFIG_PACKAGE_luci-app-diskman_INCLUDE_mdadm=y' .config
+            ! grep -q '^CONFIG_PACKAGE_luci-app-diskman_INCLUDE_kmod_md_raid456=y' .config
+            ! grep -q '^CONFIG_PACKAGE_luci-app-diskman_INCLUDE_kmod_md_linears=y' .config
             ! grep -q '^CONFIG_PACKAGE_rpcd-mod-file=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-argon-config=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-usb-storage=y' .config
@@ -223,12 +228,16 @@ jobs:
             ! grep -q '^CONFIG_PACKAGE_btrfs-progs=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-fs-btrfs=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-fs-exfat=y' .config
+            ! grep -q '^CONFIG_PACKAGE_kmod-fs-msdos=y' .config
+            ! grep -q '^CONFIG_PACKAGE_kmod-fs-ntfs3=y' .config
+            ! grep -q '^CONFIG_PACKAGE_kmod-fs-vfat=y' .config
             ! grep -q '^CONFIG_PACKAGE_dosfstools=y' .config
             ! grep -q '^CONFIG_PACKAGE_exfat-fsck=y' .config
             ! grep -q '^CONFIG_PACKAGE_exfat-mkfs=y' .config
             ! grep -q '^CONFIG_PACKAGE_f2fsck=y' .config
             ! grep -q '^CONFIG_PACKAGE_mkf2fs=y' .config
             ! grep -q '^CONFIG_PACKAGE_libf2fs6=y' .config
+            ! grep -q '^CONFIG_PACKAGE_ntfs-3g-utils=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-openclash=y' .config
             ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc=y' .config
             ! grep -q '^CONFIG_PACKAGE_dockerd=y' .config
@@ -292,6 +301,35 @@ jobs:
 
           ls -lah release-files
 
+      - name: Validate firmware manifest forbidden packages
+        run: |
+          {
+            echo "===== Validate firmware manifest forbidden packages ====="
+
+            manifest="$(find release-files -type f -name '*.manifest' | head -n 1)"
+
+            if [ -z "$manifest" ]; then
+              echo "ERROR: manifest not found"
+              find release-files -type f | sort
+              exit 1
+            fi
+
+            echo "manifest=$manifest"
+
+            echo "===== suspicious packages in manifest ====="
+            grep -Ei 'diskman|rpcd-mod-file|btrfs|exfat|f2fs|ntfs|dosfstools|kmod-fs|usb-storage|block-mount' "$manifest" || true
+
+            forbidden='^(rpcd-mod-file|btrfs-progs|kmod-fs-btrfs|kmod-fs-exfat|kmod-fs-msdos|kmod-fs-ntfs3|kmod-fs-vfat|dosfstools|exfat-fsck|exfat-mkfs|f2fsck|mkf2fs|libf2fs6|ntfs-3g-utils|kmod-usb-storage|kmod-usb-storage-uas|block-mount|kmod-fs-ext4|mount-utils)([[:space:]-]|$)'
+
+            if grep -Eq "$forbidden" "$manifest"; then
+              echo "ERROR: forbidden packages found in firmware manifest:"
+              grep -E "$forbidden" "$manifest"
+              exit 1
+            fi
+
+            echo "Manifest validate passed."
+          } 2>&1 | tee logs/11_validate_manifest.log
+
       - name: Upload build logs artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -313,7 +351,7 @@ jobs:
       - name: Generate release tag
         if: env.UPLOAD_RELEASE == 'true'
         run: |
-          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_OpenList_MinimalDiskManTest_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_F50_WiFi_SFTP_ttyd_Argon_OpenList_FixedMinimalDiskManTest_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: env.UPLOAD_RELEASE == 'true'
@@ -322,7 +360,7 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           body: |
-            RAX3000M MinimalDiskManTest build.
+            RAX3000M FixedMinimalDiskManTest build.
 
             Included:
             - F50 USB Ethernet drivers
@@ -331,7 +369,7 @@ jobs:
             - ttyd
             - luci-theme-argon
             - OpenList
-            - Minimal DiskMan LuCI package
+            - patched minimal DiskMan LuCI package
             - basic disk user tools only
 
             Still removed for this test:
@@ -342,7 +380,7 @@ jobs:
             - USB storage / UAS
             - block-mount
             - ext4 filesystem support
-            - btrfs/exfat/f2fs tools and kmods
+            - btrfs/exfat/f2fs/ntfs tools and kmods
             - manual extroot scripts
             - OpenClash
             - Docker
