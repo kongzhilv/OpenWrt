@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: kmod-usb-storage-only test - RAX3000M F50 WiFi SFTP ttyd Argon OpenList DiskMan ====="
+echo "===== DIY part2: minimal DiskMan test - RAX3000M F50 WiFi SFTP ttyd Argon OpenList DiskMan ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -23,6 +23,24 @@ git clone --depth 1 https://github.com/OpenListTeam/OpenList-OpenWRT.git package
 echo "===== Add DiskMan source ====="
 rm -rf package/luci-app-diskman
 git clone --depth 1 https://github.com/lisaac/luci-app-diskman.git package/luci-app-diskman
+
+# 删除 DiskMan 仓库里可能带出的 fs/raid/extra 依赖选项，只保留 LuCI 本体
+# 这一步是为了做“最小 DiskMan LuCI 本体”测试，不测 btrfs/exfat/f2fs/rpcd-mod-file。
+if [ -f package/luci-app-diskman/Makefile ]; then
+    cp -f package/luci-app-diskman/Makefile package/luci-app-diskman/Makefile.orig
+    sed -i \
+        -e 's/+btrfs-progs//g' \
+        -e 's/+kmod-fs-btrfs//g' \
+        -e 's/+kmod-fs-exfat//g' \
+        -e 's/+dosfstools//g' \
+        -e 's/+exfat-fsck//g' \
+        -e 's/+exfat-mkfs//g' \
+        -e 's/+f2fsck//g' \
+        -e 's/+mkf2fs//g' \
+        -e 's/+libf2fs6//g' \
+        -e 's/+rpcd-mod-file//g' \
+        package/luci-app-diskman/Makefile
+fi
 
 # 清掉旧 files，避免旧 F50/extroot/OpenClash/TempInfo 脚本进入固件
 rm -rf files
@@ -56,7 +74,7 @@ CONFIG_PACKAGE_openlist=y
 CONFIG_PACKAGE_luci-app-openlist=y
 CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y
 
-# DiskMan
+# Minimal DiskMan LuCI test
 CONFIG_PACKAGE_luci-app-diskman=y
 CONFIG_PACKAGE_luci-i18n-diskman-zh-cn=y
 CONFIG_PACKAGE_luci-compat=y
@@ -69,9 +87,6 @@ CONFIG_PACKAGE_partx-utils=y
 CONFIG_PACKAGE_losetup=y
 CONFIG_PACKAGE_e2fsprogs=y
 CONFIG_PACKAGE_smartmontools=y
-
-# USB storage driver only test, no UAS, no block-mount, no ext4, no extroot
-CONFIG_PACKAGE_kmod-usb-storage=y
 
 # Common tools
 CONFIG_PACKAGE_bash=y
@@ -122,14 +137,23 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
 CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y
 CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 
-# Must stay disabled in USBStorageOnlyTest
+# Must stay disabled in Minimal DiskMan test
 # CONFIG_PACKAGE_rpcd-mod-file is not set
 # CONFIG_PACKAGE_luci-app-argon-config is not set
+# CONFIG_PACKAGE_kmod-usb-storage is not set
 # CONFIG_PACKAGE_kmod-usb-storage-uas is not set
 # CONFIG_PACKAGE_block-mount is not set
 # CONFIG_PACKAGE_kmod-fs-ext4 is not set
 # CONFIG_PACKAGE_mount-utils is not set
 # CONFIG_PACKAGE_btrfs-progs is not set
+# CONFIG_PACKAGE_kmod-fs-btrfs is not set
+# CONFIG_PACKAGE_kmod-fs-exfat is not set
+# CONFIG_PACKAGE_dosfstools is not set
+# CONFIG_PACKAGE_exfat-fsck is not set
+# CONFIG_PACKAGE_exfat-mkfs is not set
+# CONFIG_PACKAGE_f2fsck is not set
+# CONFIG_PACKAGE_mkf2fs is not set
+# CONFIG_PACKAGE_libf2fs6 is not set
 # CONFIG_PACKAGE_mdadm is not set
 # CONFIG_PACKAGE_kmod-md-linear is not set
 # CONFIG_PACKAGE_kmod-md-raid0 is not set
