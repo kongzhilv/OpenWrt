@@ -21,8 +21,29 @@ rm -rf package/openlist
 git clone --depth 1 https://github.com/OpenListTeam/OpenList-OpenWRT.git package/openlist
 
 echo "===== Add DiskMan source ====="
+
+# 重点：
+# 不要把整个仓库直接放到 package/luci-app-diskman。
+# 原仓库真正的 OpenWrt 包在 applications/luci-app-diskman。
+# 这里先 clone 到 /tmp，再把应用包目录复制到 package/luci-app-diskman。
 rm -rf package/luci-app-diskman
-git clone --depth 1 https://github.com/lisaac/luci-app-diskman.git package/luci-app-diskman
+rm -rf /tmp/luci-app-diskman-src
+
+git clone --depth 1 https://github.com/lisaac/luci-app-diskman.git /tmp/luci-app-diskman-src
+
+if [ ! -f /tmp/luci-app-diskman-src/applications/luci-app-diskman/Makefile ]; then
+    echo "ERROR: DiskMan application Makefile not found"
+    find /tmp/luci-app-diskman-src -maxdepth 5 -type f -name Makefile -print || true
+    exit 1
+fi
+
+cp -a /tmp/luci-app-diskman-src/applications/luci-app-diskman package/luci-app-diskman
+
+if [ ! -f package/luci-app-diskman/Makefile ]; then
+    echo "ERROR: package/luci-app-diskman/Makefile missing after copy"
+    find package/luci-app-diskman -maxdepth 5 -type f -print || true
+    exit 1
+fi
 
 echo "===== Patch DiskMan Makefile dependencies ====="
 
@@ -30,70 +51,57 @@ python3 - <<'PY'
 from pathlib import Path
 import re
 
-root = Path("package/luci-app-diskman")
-makefiles = sorted(root.rglob("Makefile"))
+mf = Path("package/luci-app-diskman/Makefile")
 
-if not makefiles:
-    raise SystemExit("ERROR: no DiskMan Makefile found")
+if not mf.exists():
+    raise SystemExit("ERROR: package/luci-app-diskman/Makefile not found")
 
-patched = 0
+text = mf.read_text(errors="ignore")
+mf.with_suffix(mf.suffix + ".orig").write_text(text)
 
-for mf in makefiles:
-    text = mf.read_text(errors="ignore")
+# 直接重写 LUCI_DEPENDS，防止原始 Makefile 自动带入 btrfs/exfat/f2fs/ntfs/rpcd-mod-file。
+text = re.sub(
+    r"LUCI_DEPENDS:=.*?(?=\nLUCI_DESCRIPTION:=)",
+    "LUCI_DEPENDS:=+luci-compat +luci-lib-ipkg +e2fsprogs +parted +smartmontools +blkid +lsblk",
+    text,
+    flags=re.S
+)
 
-    if "luci-app-diskman" not in text:
-        continue
+# 兼容 DEPENDS:= 写法。
+text = re.sub(
+    r"DEPENDS:=.*?(?=\nendef)",
+    "DEPENDS:=+luci-compat +luci-lib-ipkg +e2fsprogs +parted +smartmontools +blkid +lsblk",
+    text,
+    flags=re.S
+)
 
-    print(f"patch diskman makefile: {mf}")
-    mf.with_suffix(mf.suffix + ".orig").write_text(text)
+# 把可选项默认值从 y 改成 n，防止 make defconfig 自动打开。
+text = re.sub(
+    r'(config PACKAGE_\$\(PKG_NAME\)_INCLUDE_ntfs_3g_utils.*?bool "Include ntfs-3g-utils"\n)default y',
+    r'\1default n',
+    text,
+    flags=re.S
+)
+text = re.sub(
+    r'(config PACKAGE_\$\(PKG_NAME\)_INCLUDE_btrfs_progs.*?bool "Include btrfs-progs"\n)default y',
+    r'\1default n',
+    text,
+    flags=re.S
+)
+text = re.sub(
+    r'(config PACKAGE_\$\(PKG_NAME\)_INCLUDE_lsblk.*?bool "Include lsblk"\n)default y',
+    r'\1default n',
+    text,
+    flags=re.S
+)
 
-    # 直接重写 LUCI_DEPENDS，防止原始 Makefile 自动带入 btrfs/exfat/f2fs/ntfs/rpcd-mod-file。
-    text = re.sub(
-        r"LUCI_DEPENDS:=.*?(?=\nLUCI_DESCRIPTION:=)",
-        "LUCI_DEPENDS:=+luci-compat +luci-lib-ipkg +e2fsprogs +parted +smartmontools +blkid +lsblk",
-        text,
-        flags=re.S
-    )
+mf.write_text(text)
 
-    # 兼容 DEPENDS:= 写法。
-    text = re.sub(
-        r"DEPENDS:=.*?(?=\nendef)",
-        "DEPENDS:=+luci-compat +luci-lib-ipkg +e2fsprogs +parted +smartmontools +blkid +lsblk",
-        text,
-        flags=re.S
-    )
-
-    # 把可选项默认值从 y 改成 n，防止 make defconfig 自动打开。
-    text = re.sub(
-        r'(config PACKAGE_\$\(PKG_NAME\)_INCLUDE_ntfs_3g_utils.*?bool "Include ntfs-3g-utils"\n)default y',
-        r'\1default n',
-        text,
-        flags=re.S
-    )
-    text = re.sub(
-        r'(config PACKAGE_\$\(PKG_NAME\)_INCLUDE_btrfs_progs.*?bool "Include btrfs-progs"\n)default y',
-        r'\1default n',
-        text,
-        flags=re.S
-    )
-    text = re.sub(
-        r'(config PACKAGE_\$\(PKG_NAME\)_INCLUDE_lsblk.*?bool "Include lsblk"\n)default y',
-        r'\1default n',
-        text,
-        flags=re.S
-    )
-
-    mf.write_text(text)
-    patched += 1
-
-print(f"patched Makefile count: {patched}")
-
-if patched == 0:
-    raise SystemExit("ERROR: DiskMan Makefile was not patched")
+print("patched DiskMan Makefile:", mf)
 PY
 
 echo "===== DiskMan Makefile after patch ====="
-find package/luci-app-diskman -type f -name Makefile -print -exec grep -nE 'LUCI_DEPENDS|DEPENDS|btrfs|exfat|f2fs|rpcd-mod-file|ntfs|dosfstools|kmod-fs' {} \; || true
+grep -nE 'LUCI_DEPENDS|DEPENDS|btrfs|exfat|f2fs|rpcd-mod-file|ntfs|dosfstools|kmod-fs|luci-lib-ipkg|parted|smartmontools|blkid|lsblk' package/luci-app-diskman/Makefile || true
 
 # 清掉旧 files，避免旧 F50/extroot/OpenClash/TempInfo 脚本进入固件
 rm -rf files
