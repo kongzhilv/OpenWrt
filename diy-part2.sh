@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: minimal DiskMan test - RAX3000M F50 WiFi SFTP ttyd Argon OpenList DiskMan ====="
+echo "===== DIY part2: fixed minimal DiskMan test - RAX3000M F50 WiFi SFTP ttyd Argon OpenList DiskMan ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -24,23 +24,76 @@ echo "===== Add DiskMan source ====="
 rm -rf package/luci-app-diskman
 git clone --depth 1 https://github.com/lisaac/luci-app-diskman.git package/luci-app-diskman
 
-# 删除 DiskMan 仓库里可能带出的 fs/raid/extra 依赖选项，只保留 LuCI 本体
-# 这一步是为了做“最小 DiskMan LuCI 本体”测试，不测 btrfs/exfat/f2fs/rpcd-mod-file。
-if [ -f package/luci-app-diskman/Makefile ]; then
-    cp -f package/luci-app-diskman/Makefile package/luci-app-diskman/Makefile.orig
-    sed -i \
-        -e 's/+btrfs-progs//g' \
-        -e 's/+kmod-fs-btrfs//g' \
-        -e 's/+kmod-fs-exfat//g' \
-        -e 's/+dosfstools//g' \
-        -e 's/+exfat-fsck//g' \
-        -e 's/+exfat-mkfs//g' \
-        -e 's/+f2fsck//g' \
-        -e 's/+mkf2fs//g' \
-        -e 's/+libf2fs6//g' \
-        -e 's/+rpcd-mod-file//g' \
-        package/luci-app-diskman/Makefile
-fi
+echo "===== Patch DiskMan Makefile dependencies ====="
+
+python3 - <<'PY'
+from pathlib import Path
+import re
+
+root = Path("package/luci-app-diskman")
+makefiles = sorted(root.rglob("Makefile"))
+
+if not makefiles:
+    raise SystemExit("ERROR: no DiskMan Makefile found")
+
+patched = 0
+
+for mf in makefiles:
+    text = mf.read_text(errors="ignore")
+
+    if "luci-app-diskman" not in text:
+        continue
+
+    print(f"patch diskman makefile: {mf}")
+    mf.with_suffix(mf.suffix + ".orig").write_text(text)
+
+    # 直接重写 LUCI_DEPENDS，防止原始 Makefile 自动带入 btrfs/exfat/f2fs/ntfs/rpcd-mod-file。
+    text = re.sub(
+        r"LUCI_DEPENDS:=.*?(?=\nLUCI_DESCRIPTION:=)",
+        "LUCI_DEPENDS:=+luci-compat +luci-lib-ipkg +e2fsprogs +parted +smartmontools +blkid +lsblk",
+        text,
+        flags=re.S
+    )
+
+    # 兼容 DEPENDS:= 写法。
+    text = re.sub(
+        r"DEPENDS:=.*?(?=\nendef)",
+        "DEPENDS:=+luci-compat +luci-lib-ipkg +e2fsprogs +parted +smartmontools +blkid +lsblk",
+        text,
+        flags=re.S
+    )
+
+    # 把可选项默认值从 y 改成 n，防止 make defconfig 自动打开。
+    text = re.sub(
+        r'(config PACKAGE_\$\(PKG_NAME\)_INCLUDE_ntfs_3g_utils.*?bool "Include ntfs-3g-utils"\n)default y',
+        r'\1default n',
+        text,
+        flags=re.S
+    )
+    text = re.sub(
+        r'(config PACKAGE_\$\(PKG_NAME\)_INCLUDE_btrfs_progs.*?bool "Include btrfs-progs"\n)default y',
+        r'\1default n',
+        text,
+        flags=re.S
+    )
+    text = re.sub(
+        r'(config PACKAGE_\$\(PKG_NAME\)_INCLUDE_lsblk.*?bool "Include lsblk"\n)default y',
+        r'\1default n',
+        text,
+        flags=re.S
+    )
+
+    mf.write_text(text)
+    patched += 1
+
+print(f"patched Makefile count: {patched}")
+
+if patched == 0:
+    raise SystemExit("ERROR: DiskMan Makefile was not patched")
+PY
+
+echo "===== DiskMan Makefile after patch ====="
+find package/luci-app-diskman -type f -name Makefile -print -exec grep -nE 'LUCI_DEPENDS|DEPENDS|btrfs|exfat|f2fs|rpcd-mod-file|ntfs|dosfstools|kmod-fs' {} \; || true
 
 # 清掉旧 files，避免旧 F50/extroot/OpenClash/TempInfo 脚本进入固件
 rm -rf files
@@ -137,7 +190,15 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
 CONFIG_PACKAGE_kmod-usb-net-cdc-eem=y
 CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 
-# Must stay disabled in Minimal DiskMan test
+# DiskMan optional features must stay disabled
+# CONFIG_PACKAGE_luci-app-diskman_INCLUDE_ntfs_3g_utils is not set
+# CONFIG_PACKAGE_luci-app-diskman_INCLUDE_btrfs_progs is not set
+# CONFIG_PACKAGE_luci-app-diskman_INCLUDE_lsblk is not set
+# CONFIG_PACKAGE_luci-app-diskman_INCLUDE_mdadm is not set
+# CONFIG_PACKAGE_luci-app-diskman_INCLUDE_kmod_md_raid456 is not set
+# CONFIG_PACKAGE_luci-app-diskman_INCLUDE_kmod_md_linears is not set
+
+# Must stay disabled in fixed Minimal DiskMan test
 # CONFIG_PACKAGE_rpcd-mod-file is not set
 # CONFIG_PACKAGE_luci-app-argon-config is not set
 # CONFIG_PACKAGE_kmod-usb-storage is not set
@@ -148,12 +209,16 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 # CONFIG_PACKAGE_btrfs-progs is not set
 # CONFIG_PACKAGE_kmod-fs-btrfs is not set
 # CONFIG_PACKAGE_kmod-fs-exfat is not set
+# CONFIG_PACKAGE_kmod-fs-msdos is not set
+# CONFIG_PACKAGE_kmod-fs-ntfs3 is not set
+# CONFIG_PACKAGE_kmod-fs-vfat is not set
 # CONFIG_PACKAGE_dosfstools is not set
 # CONFIG_PACKAGE_exfat-fsck is not set
 # CONFIG_PACKAGE_exfat-mkfs is not set
 # CONFIG_PACKAGE_f2fsck is not set
 # CONFIG_PACKAGE_mkf2fs is not set
 # CONFIG_PACKAGE_libf2fs6 is not set
+# CONFIG_PACKAGE_ntfs-3g-utils is not set
 # CONFIG_PACKAGE_mdadm is not set
 # CONFIG_PACKAGE_kmod-md-linear is not set
 # CONFIG_PACKAGE_kmod-md-raid0 is not set
