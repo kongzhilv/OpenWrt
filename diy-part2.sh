@@ -45,6 +45,12 @@ if [ ! -f package/luci-app-diskman/Makefile ]; then
     exit 1
 fi
 
+# 修复 OpenWrt 25.12 LuCI 语言目录兼容：
+# 新 LuCI 使用 zh_Hans，再通过 luci.mk 生成 luci-i18n-xxx-zh-cn。
+if [ -d package/luci-app-diskman/po/zh-cn ] && [ ! -d package/luci-app-diskman/po/zh_Hans ]; then
+    mv package/luci-app-diskman/po/zh-cn package/luci-app-diskman/po/zh_Hans
+fi
+
 echo "===== Patch DiskMan Makefile dependencies ====="
 
 python3 - <<'PY'
@@ -60,6 +66,8 @@ text = mf.read_text(errors="ignore")
 mf.with_suffix(mf.suffix + ".orig").write_text(text)
 
 # 直接重写 LUCI_DEPENDS，防止原始 Makefile 自动带入 btrfs/exfat/f2fs/ntfs/rpcd-mod-file。
+# 注意：DiskMan 是老 Lua LuCI 包，OpenWrt 25.12 的 luci.mk 会因 luasrc 自动追加 luci-lua-runtime。
+# 所以 .config 里必须显式选上 luci-lua-runtime 及其基础依赖。
 text = re.sub(
     r"LUCI_DEPENDS:=.*?(?=\nLUCI_DESCRIPTION:=)",
     "LUCI_DEPENDS:=+luci-compat +luci-lib-ipkg +e2fsprogs +parted +smartmontools +blkid +lsblk",
@@ -103,6 +111,10 @@ PY
 echo "===== DiskMan Makefile after patch ====="
 grep -nE 'LUCI_DEPENDS|DEPENDS|btrfs|exfat|f2fs|rpcd-mod-file|ntfs|dosfstools|kmod-fs|luci-lib-ipkg|parted|smartmontools|blkid|lsblk' package/luci-app-diskman/Makefile || true
 
+echo "===== DiskMan package tree check ====="
+find package/luci-app-diskman -maxdepth 3 -type d | sort || true
+find package/luci-app-diskman -maxdepth 4 -type f -iname '*.po' | sort || true
+
 # 清掉旧 files，避免旧 F50/extroot/OpenClash/TempInfo 脚本进入固件
 rm -rf files
 mkdir -p files/etc/uci-defaults
@@ -139,7 +151,16 @@ CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y
 CONFIG_PACKAGE_luci-app-diskman=y
 CONFIG_PACKAGE_luci-i18n-diskman-zh-cn=y
 CONFIG_PACKAGE_luci-compat=y
+CONFIG_PACKAGE_luci-lua-runtime=y
+CONFIG_PACKAGE_luci-lib-base=y
+CONFIG_PACKAGE_luci-lib-nixio=y
+CONFIG_PACKAGE_luci-lib-ip=y
+CONFIG_PACKAGE_luci-lib-jsonc=y
 CONFIG_PACKAGE_luci-lib-ipkg=y
+CONFIG_PACKAGE_lua=y
+CONFIG_PACKAGE_libubus-lua=y
+CONFIG_PACKAGE_liblucihttp-lua=y
+CONFIG_PACKAGE_ucode-mod-lua=y
 CONFIG_PACKAGE_parted=y
 CONFIG_PACKAGE_fdisk=y
 CONFIG_PACKAGE_blkid=y
