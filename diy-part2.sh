@@ -45,11 +45,23 @@ if [ ! -f package/luci-app-diskman/Makefile ]; then
     exit 1
 fi
 
-# 修复 OpenWrt 25.12 LuCI 语言目录兼容：
-# 新 LuCI 使用 zh_Hans，再通过 luci.mk 生成 luci-i18n-xxx-zh-cn。
-if [ -d package/luci-app-diskman/po/zh-cn ] && [ ! -d package/luci-app-diskman/po/zh_Hans ]; then
+echo "===== Fix DiskMan LuCI translation dirs ====="
+
+# OpenWrt 新 LuCI 语言目录用 zh_Hans / zh_Hant。
+# lisaac/luci-app-diskman 老仓库里是 zh-cn / zh-tw。
+# 这里强制重命名，并打印结果，防止日志里看不出来有没有生效。
+if [ -d package/luci-app-diskman/po/zh-cn ]; then
+    rm -rf package/luci-app-diskman/po/zh_Hans
     mv package/luci-app-diskman/po/zh-cn package/luci-app-diskman/po/zh_Hans
 fi
+
+if [ -d package/luci-app-diskman/po/zh-tw ]; then
+    rm -rf package/luci-app-diskman/po/zh_Hant
+    mv package/luci-app-diskman/po/zh-tw package/luci-app-diskman/po/zh_Hant
+fi
+
+echo "===== DiskMan po dirs after fix ====="
+find package/luci-app-diskman/po -maxdepth 2 -type f -name '*.po' | sort || true
 
 echo "===== Patch DiskMan Makefile dependencies ====="
 
