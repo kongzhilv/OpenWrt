@@ -179,8 +179,8 @@ jobs:
             echo "===== Required fixed minimal DiskMan package ====="
 
             echo "===== DiskMan related final config ====="
-            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lib-ipkg|parted|fdisk|blkid|lsblk|partx-utils|losetup|e2fsprogs|smartmontools)=' .config || true
-            grep -E '^# CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lib-ipkg|parted|fdisk|blkid|lsblk|partx-utils|losetup|e2fsprogs|smartmontools) is not set' .config || true
+            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|fdisk|blkid|lsblk|partx-utils|losetup|e2fsprogs|smartmontools)=' .config || true
+            grep -E '^# CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|fdisk|blkid|lsblk|partx-utils|losetup|e2fsprogs|smartmontools) is not set' .config || true
 
             echo "===== DiskMan package directories ====="
             find package -maxdepth 6 -type d -iname '*diskman*' | sort || true
@@ -199,7 +199,7 @@ jobs:
                 echo "----- matched lines for ${key} -----"
                 grep -E "^${key}=|^# ${key} is not set" .config || true
                 echo "----- nearby DiskMan-related config -----"
-                grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lib-ipkg|parted|fdisk|blkid|lsblk|partx-utils|losetup|e2fsprogs|smartmontools)' .config || true
+                grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|fdisk|blkid|lsblk|partx-utils|losetup|e2fsprogs|smartmontools)' .config || true
                 exit 1
               fi
             }
@@ -213,7 +213,16 @@ jobs:
             require_config CONFIG_PACKAGE_luci-app-diskman
             require_config CONFIG_PACKAGE_luci-i18n-diskman-zh-cn
             require_config CONFIG_PACKAGE_luci-compat
+            require_config CONFIG_PACKAGE_luci-lua-runtime
+            require_config CONFIG_PACKAGE_luci-lib-base
+            require_config CONFIG_PACKAGE_luci-lib-nixio
+            require_config CONFIG_PACKAGE_luci-lib-ip
+            require_config CONFIG_PACKAGE_luci-lib-jsonc
             require_config CONFIG_PACKAGE_luci-lib-ipkg
+            require_config CONFIG_PACKAGE_lua
+            require_config CONFIG_PACKAGE_libubus-lua
+            require_config CONFIG_PACKAGE_liblucihttp-lua
+            require_config CONFIG_PACKAGE_ucode-mod-lua
             require_config CONFIG_PACKAGE_parted
             require_config CONFIG_PACKAGE_fdisk
             require_config CONFIG_PACKAGE_blkid
@@ -418,6 +427,7 @@ jobs:
             - luci-theme-argon
             - OpenList
             - patched minimal DiskMan LuCI package
+            - DiskMan Lua LuCI runtime dependencies
             - basic disk user tools only
 
             Still removed for this test:
