@@ -39,6 +39,11 @@ fi
 
 cp -a /tmp/luci-app-diskman-src/applications/luci-app-diskman package/luci-app-diskman
 
+if [ ! -d package/luci-app-diskman ]; then
+    echo "ERROR: package/luci-app-diskman missing after copy"
+    exit 1
+fi
+
 if [ ! -f package/luci-app-diskman/Makefile ]; then
     echo "ERROR: package/luci-app-diskman/Makefile missing after copy"
     find package/luci-app-diskman -maxdepth 5 -type f -print || true
@@ -63,65 +68,70 @@ fi
 echo "===== DiskMan po dirs after fix ====="
 find package/luci-app-diskman/po -maxdepth 2 -type f -name '*.po' | sort || true
 
-echo "===== Patch DiskMan Makefile dependencies ====="
+echo "===== Rewrite DiskMan Makefile cleanly ====="
 
-python3 - <<'PY'
-from pathlib import Path
-import re
+# 关键修复：
+# 上一版用正则 patch DEPENDS:= 时，误匹配了 LUCI_DEPENDS:= 里的 DEPENDS，
+# 导致 Makefile 被改坏，只剩 LUCI_DEPENDS 后面跟一个孤立 endef。
+# 这里不再正则 patch，而是直接重写一个干净的 LuCI Makefile。
+cat > package/luci-app-diskman/Makefile <<'EOF_DISKMAN_MAKEFILE'
+include $(TOPDIR)/rules.mk
 
-mf = Path("package/luci-app-diskman/Makefile")
+PKG_NAME:=luci-app-diskman
+LUCI_NAME:=luci-app-diskman
+PKG_VERSION:=0.2.13
+PKG_RELEASE:=1
 
-if not mf.exists():
-    raise SystemExit("ERROR: package/luci-app-diskman/Makefile not found")
+PKG_MAINTAINER:=lisaac <https://github.com/lisaac/luci-app-diskman>
+PKG_LICENSE:=AGPL-3.0
 
-text = mf.read_text(errors="ignore")
-mf.with_suffix(mf.suffix + ".orig").write_text(text)
+LUCI_TITLE:=Disk Manager interface for LuCI
+LUCI_DESCRIPTION:=Disk Manager interface for LuCI
 
-# 直接重写 LUCI_DEPENDS，防止原始 Makefile 自动带入 btrfs/exfat/f2fs/ntfs/rpcd-mod-file。
-# 注意：DiskMan 是老 Lua LuCI 包，OpenWrt 25.12 的 luci.mk 会因 luasrc 自动追加 luci-lua-runtime。
-# 所以 .config 里必须显式选上 luci-lua-runtime 及其基础依赖。
-text = re.sub(
-    r"LUCI_DEPENDS:=.*?(?=\nLUCI_DESCRIPTION:=)",
-    "LUCI_DEPENDS:=+luci-compat +luci-lib-ipkg +e2fsprogs +parted +smartmontools +blkid +lsblk",
-    text,
-    flags=re.S
-)
+# 最小化依赖：
+# 保留 DiskMan 基础页面需要的 LuCI / 磁盘工具。
+# 不引入 rpcd-mod-file、USB storage、block-mount、ext4、btrfs/exfat/ntfs/f2fs 等重包。
+LUCI_DEPENDS:=+luci-compat +luci-lib-ipkg +e2fsprogs +parted +smartmontools +blkid +lsblk
 
-# 兼容 DEPENDS:= 写法。
-text = re.sub(
-    r"DEPENDS:=.*?(?=\nendef)",
-    "DEPENDS:=+luci-compat +luci-lib-ipkg +e2fsprogs +parted +smartmontools +blkid +lsblk",
-    text,
-    flags=re.S
-)
+define Package/$(PKG_NAME)/config
+config PACKAGE_$(PKG_NAME)_INCLUDE_ntfs_3g_utils
+	depends on PACKAGE_$(PKG_NAME)
+	bool "Include ntfs-3g-utils"
+	default n
 
-# 把可选项默认值从 y 改成 n，防止 make defconfig 自动打开。
-text = re.sub(
-    r'(config PACKAGE_\$\(PKG_NAME\)_INCLUDE_ntfs_3g_utils.*?bool "Include ntfs-3g-utils"\n)default y',
-    r'\1default n',
-    text,
-    flags=re.S
-)
-text = re.sub(
-    r'(config PACKAGE_\$\(PKG_NAME\)_INCLUDE_btrfs_progs.*?bool "Include btrfs-progs"\n)default y',
-    r'\1default n',
-    text,
-    flags=re.S
-)
-text = re.sub(
-    r'(config PACKAGE_\$\(PKG_NAME\)_INCLUDE_lsblk.*?bool "Include lsblk"\n)default y',
-    r'\1default n',
-    text,
-    flags=re.S
-)
+config PACKAGE_$(PKG_NAME)_INCLUDE_btrfs_progs
+	depends on PACKAGE_$(PKG_NAME)
+	bool "Include btrfs-progs"
+	default n
 
-mf.write_text(text)
+config PACKAGE_$(PKG_NAME)_INCLUDE_lsblk
+	depends on PACKAGE_$(PKG_NAME)
+	bool "Include lsblk"
+	default n
 
-print("patched DiskMan Makefile:", mf)
-PY
+config PACKAGE_$(PKG_NAME)_INCLUDE_mdadm
+	depends on PACKAGE_$(PKG_NAME)
+	bool "Include mdadm"
+	default n
 
-echo "===== DiskMan Makefile after patch ====="
-grep -nE 'LUCI_DEPENDS|DEPENDS|btrfs|exfat|f2fs|rpcd-mod-file|ntfs|dosfstools|kmod-fs|luci-lib-ipkg|parted|smartmontools|blkid|lsblk' package/luci-app-diskman/Makefile || true
+config PACKAGE_$(PKG_NAME)_INCLUDE_kmod_md_raid456
+	depends on PACKAGE_$(PKG_NAME)_INCLUDE_mdadm
+	bool "Include kmod-md-raid456"
+	default n
+
+config PACKAGE_$(PKG_NAME)_INCLUDE_kmod_md_linears
+	depends on PACKAGE_$(PKG_NAME)_INCLUDE_mdadm
+	bool "Include kmod-md-linear"
+	default n
+endef
+
+include $(TOPDIR)/feeds/luci/luci.mk
+
+# call BuildPackage - OpenWrt buildroot signature
+EOF_DISKMAN_MAKEFILE
+
+echo "===== DiskMan Makefile after rewrite ====="
+sed -n '1,220p' package/luci-app-diskman/Makefile
 
 echo "===== DiskMan package tree check ====="
 find package/luci-app-diskman -maxdepth 3 -type d | sort || true
