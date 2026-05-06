@@ -134,7 +134,37 @@ jobs:
             cd openwrt
             "$GITHUB_WORKSPACE/$DIY_P2_SH"
 
-            make defconfig
+            echo "===== Force refresh OpenWrt package metadata ====="
+            # 关键修复：
+            # DiskMan 是在 feeds install 之后才复制进 package/ 的。
+            # 如果不清 tmp，OpenWrt 可能继续使用旧的包索引，
+            # 导致 .config 里根本没有 CONFIG_PACKAGE_luci-app-diskman 这个符号。
+            rm -rf tmp
+
+            echo "===== Generate defconfig ====="
+            make defconfig V=s
+
+            echo "===== Check DiskMan in generated package index ====="
+            grep -R "luci-app-diskman" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
+            grep -R "luci-i18n-diskman" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
+
+            echo "===== Check DiskMan in final .config ====="
+            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman)' .config || true
+            grep -E '^# CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman)' .config || true
+
+            if ! grep -q '^CONFIG_PACKAGE_luci-app-diskman=y' .config; then
+              echo "ERROR: luci-app-diskman still not selected after package metadata refresh"
+              echo "===== package/luci-app-diskman tree ====="
+              find package/luci-app-diskman -maxdepth 5 -type f | sort || true
+
+              echo "===== package/luci-app-diskman Makefile ====="
+              sed -n '1,220p' package/luci-app-diskman/Makefile || true
+
+              echo "===== tmp package index diskman search ====="
+              grep -R "diskman" tmp 2>/dev/null | head -200 || true
+
+              exit 1
+            fi
 
             cp -f .config "$GITHUB_WORKSPACE/logs/07_final.config"
           } 2>&1 | tee logs/07_diy_part2_and_defconfig.log
