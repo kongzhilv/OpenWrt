@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: fixed minimal DiskMan test - RAX3000M F50 WiFi SFTP ttyd Argon OpenList DiskMan ====="
+echo "===== DIY part2: fixed minimal DiskMan test - RAX3000M F50 WiFi SFTP ttyd Argon OpenList DiskMan with fitrw ext4 init ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -71,9 +71,7 @@ find package/luci-app-diskman/po -maxdepth 2 -type f -name '*.po' | sort || true
 echo "===== Rewrite DiskMan Makefile cleanly ====="
 
 # 关键修复：
-# 上一版用正则 patch DEPENDS:= 时，误匹配了 LUCI_DEPENDS:= 里的 DEPENDS，
-# 导致 Makefile 被改坏，只剩 LUCI_DEPENDS 后面跟一个孤立 endef。
-# 这里不再正则 patch，而是直接重写一个干净的 LuCI Makefile。
+# 不再用正则 patch，而是直接重写一个干净的 LuCI Makefile。
 cat > package/luci-app-diskman/Makefile <<'EOF_DISKMAN_MAKEFILE'
 include $(TOPDIR)/rules.mk
 
@@ -90,7 +88,7 @@ LUCI_DESCRIPTION:=Disk Manager interface for LuCI
 
 # 最小化依赖：
 # 保留 DiskMan 基础页面需要的 LuCI / 磁盘工具。
-# 不引入 rpcd-mod-file、USB storage、block-mount、ext4、btrfs/exfat/ntfs/f2fs 等重包。
+# ext4 overlay 初始化由独立 uci-defaults 脚本处理。
 LUCI_DEPENDS:=+luci-compat +luci-lib-ipkg +e2fsprogs +parted +smartmontools +blkid +lsblk
 
 define Package/$(PKG_NAME)/config
@@ -141,6 +139,73 @@ find package/luci-app-diskman -maxdepth 4 -type f -iname '*.po' | sort || true
 rm -rf files
 mkdir -p files/etc/uci-defaults
 
+# 首次启动自动格式化 /dev/fitrw 为 ext4。
+# 按你的要求：只格式化，不复制 /tmp/root/upper，不瘦身，不迁移临时 overlay。
+cat > files/etc/uci-defaults/00-format-fitrw-overlay <<'EOF_FITRW'
+#!/bin/sh
+
+LOGTAG="format-fitrw-overlay"
+
+logger -t "$LOGTAG" "start"
+
+# 只处理 FIT 布局
+if [ ! -b /dev/fitrw ]; then
+    logger -t "$LOGTAG" "/dev/fitrw not found, skip"
+    exit 0
+fi
+
+# 已经是持久 overlay，就正常退出，让 uci-defaults 删除本脚本
+if mount | grep -qE '/dev/fitrw on /overlay|overlayfs:/overlay on /'; then
+    logger -t "$LOGTAG" "persistent overlay already mounted, done"
+    exit 0
+fi
+
+# 不是 tmp overlay，不乱动
+if ! mount | grep -q 'overlayfs:/tmp/root on /'; then
+    logger -t "$LOGTAG" "not tmp overlay, skip"
+    exit 0
+fi
+
+# 如果 /dev/fitrw 已经是 ext4，但 mount_root 没挂上，不重复格式化，也不无限重启
+if block info /dev/fitrw 2>/dev/null | grep -q 'TYPE="ext4"'; then
+    logger -t "$LOGTAG" "ERROR: /dev/fitrw is already ext4 but not mounted as overlay; stop to avoid reboot loop"
+    exit 1
+fi
+
+# 确保 ext4 支持
+if ! grep -qw ext4 /proc/filesystems; then
+    modprobe ext4 2>/dev/null || true
+fi
+
+if ! grep -qw ext4 /proc/filesystems; then
+    logger -t "$LOGTAG" "ERROR: ext4 filesystem support not available"
+    exit 1
+fi
+
+if ! command -v mkfs.ext4 >/dev/null 2>&1; then
+    logger -t "$LOGTAG" "ERROR: mkfs.ext4 not found"
+    exit 1
+fi
+
+logger -t "$LOGTAG" "format /dev/fitrw as ext4 rootfs_data"
+
+dd if=/dev/zero of=/dev/fitrw bs=1M count=16 conv=fsync 2>/dev/null || true
+mkfs.ext4 -F -L rootfs_data /dev/fitrw
+
+sync
+
+logger -t "$LOGTAG" "format done, reboot now"
+
+# 必须 reboot：
+# 当前 / 已经是 overlayfs:/tmp/root，格式化后不会自动切换到 /dev/fitrw。
+# 需要下一次启动时由 preinit/mount_root 重新识别 /dev/fitrw 并挂成 /overlay。
+# 故意 exit 1：第一次在临时 overlay 下不要删除脚本；第二次 overlay 正常后 exit 0 删除。
+reboot -f
+exit 1
+EOF_FITRW
+
+chmod +x files/etc/uci-defaults/00-format-fitrw-overlay
+
 # 直接重写 .config，避免 openwrt_one 或旧包残留
 cat > .config <<'EOF_CONFIG'
 CONFIG_TARGET_mediatek=y
@@ -190,6 +255,8 @@ CONFIG_PACKAGE_lsblk=y
 CONFIG_PACKAGE_partx-utils=y
 CONFIG_PACKAGE_losetup=y
 CONFIG_PACKAGE_e2fsprogs=y
+CONFIG_PACKAGE_kmod-fs-ext4=y
+CONFIG_PACKAGE_mount-utils=y
 CONFIG_PACKAGE_smartmontools=y
 
 # Common tools
@@ -255,8 +322,6 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 # CONFIG_PACKAGE_kmod-usb-storage is not set
 # CONFIG_PACKAGE_kmod-usb-storage-uas is not set
 # CONFIG_PACKAGE_block-mount is not set
-# CONFIG_PACKAGE_kmod-fs-ext4 is not set
-# CONFIG_PACKAGE_mount-utils is not set
 # CONFIG_PACKAGE_btrfs-progs is not set
 # CONFIG_PACKAGE_kmod-fs-btrfs is not set
 # CONFIG_PACKAGE_kmod-fs-exfat is not set
