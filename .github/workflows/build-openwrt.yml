@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky EQOSPlus P1
+name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky EQOSPlus P1 Fixed
 
 on:
   workflow_dispatch:
@@ -29,7 +29,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-p1-lucky-eqosplus
+    name: build-f50-p1-lucky-eqosplus-fixed
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
@@ -164,8 +164,8 @@ jobs:
             grep -R "luci-app-eqosplus" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
 
             echo "===== Check important packages in final .config ====="
-            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-eqosplus|kmod-ifb|tc|nftables|bc)' .config || true
-            grep -E '^# CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-eqosplus|kmod-ifb|tc|nftables|bc)' .config || true
+            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc)' .config || true
+            grep -E '^# CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc)' .config || true
 
             if ! grep -q '^CONFIG_PACKAGE_luci-app-diskman=y' .config; then
               echo "ERROR: luci-app-diskman still not selected after package metadata refresh"
@@ -232,7 +232,8 @@ jobs:
             grep -q '^CONFIG_PACKAGE_luci-app-lucky=y' .config
             grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config
             grep -q '^CONFIG_PACKAGE_kmod-ifb=y' .config
-            grep -q '^CONFIG_PACKAGE_nftables=y' .config
+            grep -q '^CONFIG_PACKAGE_tc-tiny=y' .config
+            grep -q '^CONFIG_PACKAGE_nftables-json=y' .config
             grep -q '^CONFIG_PACKAGE_bc=y' .config
 
             echo "===== Required fixed minimal DiskMan package ====="
@@ -280,7 +281,8 @@ jobs:
             require_config CONFIG_PACKAGE_luci-app-lucky
             require_config CONFIG_PACKAGE_luci-app-eqosplus
             require_config CONFIG_PACKAGE_kmod-ifb
-            require_config CONFIG_PACKAGE_nftables
+            require_config CONFIG_PACKAGE_tc-tiny
+            require_config CONFIG_PACKAGE_nftables-json
             require_config CONFIG_PACKAGE_bc
 
             echo "===== Required ttyd packages ====="
@@ -465,10 +467,10 @@ jobs:
 
             {
               echo "===== grep important packages from .config ====="
-              grep -E 'CONFIG_PACKAGE_(luci|rpcd|diskman|openlist|lucky|eqos|ttyd|argon|parted|lsblk|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils)' .config || true
+              grep -E 'CONFIG_PACKAGE_(luci|rpcd|diskman|openlist|lucky|eqos|ttyd|argon|parted|lsblk|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils|tc-tiny|nftables-json|kmod-ifb|bc)' .config || true
               echo
               echo "===== grep important packages from tmp/.packageinfo ====="
-              grep -nE 'Package: (luci-app-diskman|luci-i18n-diskman|luci-app-lucky|lucky|luci-app-eqosplus|rpcd-mod-file|luci-base|kmod-fs-ext4|mount-utils)|Depends:|Source-Makefile:.*(diskman|lucky|eqos)' tmp/.packageinfo 2>/dev/null || true
+              grep -nE 'Package: (luci-app-diskman|luci-i18n-diskman|luci-app-lucky|lucky|luci-app-eqosplus|rpcd-mod-file|luci-base|kmod-fs-ext4|mount-utils|tc-tiny|nftables-json|kmod-ifb|bc)|Depends:|Source-Makefile:.*(diskman|lucky|eqos)' tmp/.packageinfo 2>/dev/null || true
             } > "$GITHUB_WORKSPACE/diagnostics/openwrt/package/important_package_grep.txt" 2>&1
 
             {
@@ -544,7 +546,7 @@ jobs:
       - name: Generate release tag
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
         run: |
-          echo "RELEASE_TAG=OpenWrt_F50_P1_Lucky_EQOSPlus_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_F50_P1_Lucky_EQOSPlus_Fixed_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
@@ -553,7 +555,7 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           body: |
-            RAX3000M F50 stage P1 build.
+            RAX3000M F50 stage P1 fixed build.
 
             Included:
             - F50 basic USB Ethernet drivers
@@ -569,6 +571,10 @@ jobs:
               - luci-app-lucky
               - lucky
               - luci-app-eqosplus
+              - tc-tiny
+              - nftables-json
+              - kmod-ifb
+              - bc
 
             Notes:
             - Full diagnostics are uploaded as a workflow artifact.
