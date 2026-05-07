@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: stage P1 - RAX3000M F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky EQOSPlus ====="
+echo "===== DIY part2: stage P1 fixed - RAX3000M F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky EQOSPlus ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -200,8 +200,8 @@ CONFIG_PACKAGE_luci-app-lucky=y
 # EQOS Plus - stage P1
 CONFIG_PACKAGE_luci-app-eqosplus=y
 CONFIG_PACKAGE_kmod-ifb=y
-CONFIG_PACKAGE_tc=y
-CONFIG_PACKAGE_nftables=y
+CONFIG_PACKAGE_tc-tiny=y
+CONFIG_PACKAGE_nftables-json=y
 CONFIG_PACKAGE_bc=y
 
 # Minimal DiskMan LuCI test
