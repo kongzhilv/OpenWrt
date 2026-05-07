@@ -220,7 +220,7 @@ jobs:
             echo "===== Required fixed minimal DiskMan package ====="
 
             echo "===== DiskMan related final config ====="
-            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|fdisk|blkid|lsblk|partx-utils|losetup|e2fsprogs|smartmontools)' .config || true
+            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|fdisk|blkid|lsblk|partx-utils|losetup|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils)' .config || true
 
             require_config() {
               local key="$1"
@@ -231,8 +231,8 @@ jobs:
                 echo "ERROR: missing ${key}=y"
                 echo "----- matched lines for ${key} -----"
                 grep -E "^${key}=|^# ${key} is not set" .config || true
-                echo "----- nearby DiskMan-related config -----"
-                grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|fdisk|blkid|lsblk|partx-utils|losetup|e2fsprogs|smartmontools)' .config || true
+                echo "----- nearby DiskMan/ext4-related config -----"
+                grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|fdisk|blkid|lsblk|partx-utils|losetup|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils)' .config || true
                 exit 1
               fi
             }
@@ -261,6 +261,8 @@ jobs:
             require_config CONFIG_PACKAGE_blkid
             require_config CONFIG_PACKAGE_lsblk
             require_config CONFIG_PACKAGE_e2fsprogs
+            require_config CONFIG_PACKAGE_kmod-fs-ext4
+            require_config CONFIG_PACKAGE_mount-utils
             require_config CONFIG_PACKAGE_smartmontools
 
             echo "===== Required ttyd packages ====="
@@ -292,10 +294,11 @@ jobs:
 
             echo "===== Embedded files ====="
             find files -type f | sort
+            test -f files/etc/uci-defaults/00-format-fitrw-overlay
             test -f files/etc/uci-defaults/01-enable-wifi
             test -f files/etc/uci-defaults/02-set-argon-theme
 
-            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme)$' || true)"
+            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/00-format-fitrw-overlay|files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme)$' || true)"
             if [ -n "$bad_files" ]; then
               echo "ERROR: unexpected embedded files:"
               echo "$bad_files"
@@ -389,13 +392,14 @@ jobs:
             echo "manifest=$manifest"
 
             echo "===== suspicious packages in manifest ====="
-            grep -Ei 'diskman|rpcd-mod-file|btrfs|exfat|f2fs|ntfs|dosfstools|kmod-fs|usb-storage|block-mount' "$manifest" || true
+            grep -Ei 'diskman|rpcd-mod-file|btrfs|exfat|f2fs|ntfs|dosfstools|kmod-fs|usb-storage|block-mount|mount-utils' "$manifest" || true
 
             # 注意：
             # rpcd-mod-file 不再作为硬失败项。
+            # kmod-fs-ext4 和 mount-utils 是 /dev/fitrw ext4 overlay 初始化所需，不再作为 forbidden。
             # 当前 OpenWrt/LuCI 组合会由 luci-base 带入 rpcd-mod-file。
             # 这里保留显示，但默认不 fail。
-            forbidden='^(btrfs-progs|kmod-fs-btrfs|kmod-fs-exfat|kmod-fs-msdos|kmod-fs-ntfs3|kmod-fs-vfat|dosfstools|exfat-fsck|exfat-mkfs|f2fsck|mkf2fs|libf2fs6|ntfs-3g-utils|kmod-usb-storage|kmod-usb-storage-uas|block-mount|kmod-fs-ext4|mount-utils)([[:space:]-]|$)'
+            forbidden='^(btrfs-progs|kmod-fs-btrfs|kmod-fs-exfat|kmod-fs-msdos|kmod-fs-ntfs3|kmod-fs-vfat|dosfstools|exfat-fsck|exfat-mkfs|f2fsck|mkf2fs|libf2fs6|ntfs-3g-utils|kmod-usb-storage|kmod-usb-storage-uas|block-mount)([[:space:]-]|$)'
 
             if grep -Eq "$forbidden" "$manifest"; then
               echo "::warning::forbidden-like packages found in firmware manifest:"
@@ -448,11 +452,11 @@ jobs:
             cp -f tmp/.config-target.in "$GITHUB_WORKSPACE/diagnostics/openwrt/tmp/config-target.in.txt" 2>/dev/null || true
 
             {
-              echo "===== grep diskman/rpcd/luci/openlist from .config ====="
-              grep -E 'CONFIG_PACKAGE_(luci|rpcd|diskman|openlist|ttyd|argon|parted|lsblk|e2fsprogs|smartmontools)' .config || true
+              echo "===== grep diskman/rpcd/luci/openlist/ext4 from .config ====="
+              grep -E 'CONFIG_PACKAGE_(luci|rpcd|diskman|openlist|ttyd|argon|parted|lsblk|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils)' .config || true
               echo
-              echo "===== grep diskman/rpcd from tmp/.packageinfo ====="
-              grep -nE 'Package: (luci-app-diskman|luci-i18n-diskman|rpcd-mod-file|luci-base)|Depends:|Source-Makefile:.*diskman' tmp/.packageinfo 2>/dev/null || true
+              echo "===== grep diskman/rpcd/ext4 from tmp/.packageinfo ====="
+              grep -nE 'Package: (luci-app-diskman|luci-i18n-diskman|rpcd-mod-file|luci-base|kmod-fs-ext4|mount-utils)|Depends:|Source-Makefile:.*diskman' tmp/.packageinfo 2>/dev/null || true
             } > "$GITHUB_WORKSPACE/diagnostics/openwrt/package/important_package_grep.txt" 2>&1
 
             {
@@ -461,6 +465,9 @@ jobs:
               echo
               echo "===== DiskMan Makefile ====="
               sed -n '1,260p' package/luci-app-diskman/Makefile 2>/dev/null || true
+              echo
+              echo "===== Embedded uci-defaults files ====="
+              find files/etc/uci-defaults -maxdepth 1 -type f -print -exec sed -n '1,220p' {} \; 2>/dev/null || true
             } > "$GITHUB_WORKSPACE/diagnostics/openwrt/package/diskman_tree_and_makefile.txt" 2>&1
 
             {
@@ -536,12 +543,15 @@ jobs:
             - OpenList
             - patched minimal DiskMan LuCI package
             - DiskMan Lua LuCI runtime dependencies
+            - ext4 support for /dev/fitrw persistent overlay initialization
             - basic disk user tools only
 
             Notes:
             - Full diagnostics are uploaded as a workflow artifact.
             - Manifest package warnings no longer block artifact upload by default.
             - STRICT_MANIFEST_CHECK=false by default.
+            - First boot may format /dev/fitrw as ext4 and reboot automatically.
+            - The /dev/fitrw initializer does not copy /tmp/root/upper.
 
             Still removed for this test:
             - luci-app-argon-config
@@ -549,7 +559,6 @@ jobs:
             - dark-line CSS patch
             - USB storage / UAS
             - block-mount
-            - ext4 filesystem support
             - btrfs/exfat/f2fs/ntfs tools and kmods where not pulled by base profile
             - manual extroot scripts
             - OpenClash
