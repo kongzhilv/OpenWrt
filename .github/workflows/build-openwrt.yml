@@ -209,14 +209,13 @@ jobs:
               echo "ERROR: tc-tiny must be disabled in P1A"
               exit 1
             fi
-            if grep -q '^CONFIG_PACKAGE_nftables-json=y' .config; then
-              echo "ERROR: nftables-json must be disabled in P1A"
-              exit 1
-            fi
             if grep -q '^CONFIG_PACKAGE_bc=y' .config; then
               echo "ERROR: bc must be disabled in P1A"
               exit 1
             fi
+
+            echo "===== Note ====="
+            echo "nftables-json is allowed in P1A because modern OpenWrt firewall4 may select it."
           } 2>&1 | tee logs/08_diy_part2_and_defconfig.log
 
       - name: Validate final config
@@ -264,8 +263,10 @@ jobs:
             ! grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-ifb=y' .config
             ! grep -q '^CONFIG_PACKAGE_tc-tiny=y' .config
-            ! grep -q '^CONFIG_PACKAGE_nftables-json=y' .config
             ! grep -q '^CONFIG_PACKAGE_bc=y' .config
+
+            echo "===== Note ====="
+            echo "nftables-json is allowed in P1A because it can be selected by firewall4/base system."
 
             echo "===== Required fixed minimal DiskMan package ====="
             grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|fdisk|blkid|lsblk|partx-utils|losetup|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils)' .config || true
@@ -440,11 +441,14 @@ jobs:
             echo "===== suspicious packages in manifest ====="
             grep -Ei 'diskman|lucky|eqos|ifb|nftables|tc-tiny|rpcd-mod-file|btrfs|exfat|f2fs|ntfs|dosfstools|kmod-fs|usb-storage|block-mount|mount-utils' "$manifest" || true
 
-            if grep -Eq '^(luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc)([[:space:]-]|$)' "$manifest"; then
+            if grep -Eq '^(luci-app-eqosplus|kmod-ifb|tc-tiny|bc)([[:space:]-]|$)' "$manifest"; then
               echo "ERROR: EQOS Plus related package found in P1A manifest:"
-              grep -E '^(luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc)([[:space:]-]|$)' "$manifest" || true
+              grep -E '^(luci-app-eqosplus|kmod-ifb|tc-tiny|bc)([[:space:]-]|$)' "$manifest" || true
               exit 1
             fi
+
+            echo "===== Note ====="
+            echo "nftables-json is allowed in P1A and is not treated as EQOS Plus residue."
 
             forbidden='^(btrfs-progs|kmod-fs-btrfs|kmod-fs-exfat|kmod-fs-msdos|kmod-fs-ntfs3|kmod-fs-vfat|dosfstools|exfat-fsck|exfat-mkfs|f2fsck|mkf2fs|libf2fs6|ntfs-3g-utils|kmod-usb-storage|kmod-usb-storage-uas|block-mount)([[:space:]-]|$)'
 
@@ -526,7 +530,7 @@ jobs:
               sed -n '1,260p' package/lucky/lucky/Makefile 2>/dev/null || true
               echo
               echo "===== Embedded uci-defaults files ====="
-              find files/etc/uci-defaults -maxdepth 1 -type f -print -exec sed -n '1,240p' {} \; 2>/dev/null || true
+              find files/etc/uci-defaults -maxdepth 1 -type f -print -exec sed -n '1,260p' {} \; 2>/dev/null || true
             } > "$GITHUB_WORKSPACE/diagnostics/openwrt/package/third_party_tree_and_makefiles.txt" 2>&1
 
             {
@@ -616,12 +620,12 @@ jobs:
             - WiFi uci-defaults script only enables WiFi and does not overwrite existing SSID/password.
             - Lucky is cloned in diy-part1.sh.
             - OpenList and DiskMan patching remain in diy-part2.sh.
+            - nftables-json may still exist because it can be selected by firewall4/base system; it is not treated as EQOS Plus residue.
 
             Explicitly removed for this test:
             - luci-app-eqosplus
             - kmod-ifb
             - tc-tiny
-            - nftables-json
             - bc
             - luci-app-argon-config
             - tempinfo / custom temperature LuCI JS
