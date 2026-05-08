@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky EQOSPlus P1 Fixed
+name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky P1A
 
 on:
   workflow_dispatch:
@@ -29,7 +29,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-p1-lucky-eqosplus-fixed
+    name: build-f50-p1a-lucky-only
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
@@ -169,23 +169,52 @@ jobs:
 
             if ! grep -q '^CONFIG_PACKAGE_luci-app-diskman=y' .config; then
               echo "ERROR: luci-app-diskman still not selected after package metadata refresh"
+              echo "===== package/luci-app-diskman tree ====="
               find package/luci-app-diskman -maxdepth 5 -type f | sort || true
+              echo "===== package/luci-app-diskman Makefile ====="
               sed -n '1,220p' package/luci-app-diskman/Makefile || true
+              echo "===== tmp package index diskman search ====="
               grep -R "diskman" tmp 2>/dev/null | head -200 || true
               exit 1
             fi
 
             if ! grep -q '^CONFIG_PACKAGE_luci-app-lucky=y' .config; then
               echo "ERROR: luci-app-lucky not selected"
+              echo "===== package/lucky tree ====="
               find package/lucky -maxdepth 5 -type f | sort || true
+              echo "===== tmp package index lucky search ====="
               grep -R "luci-app-lucky" tmp 2>/dev/null | head -200 || true
               exit 1
             fi
 
-            if ! grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config; then
-              echo "ERROR: luci-app-eqosplus not selected"
-              find package/luci-app-eqosplus -maxdepth 5 -type f | sort || true
-              grep -R "luci-app-eqosplus" tmp 2>/dev/null | head -200 || true
+            if ! grep -q '^CONFIG_PACKAGE_lucky=y' .config; then
+              echo "ERROR: lucky core package not selected"
+              echo "===== package/lucky tree ====="
+              find package/lucky -maxdepth 5 -type f | sort || true
+              echo "===== tmp package index lucky search ====="
+              grep -R "Package: lucky" tmp/.packageinfo 2>/dev/null || true
+              exit 1
+            fi
+
+            echo "===== Ensure EQOS Plus is disabled in P1A ====="
+            if grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config; then
+              echo "ERROR: luci-app-eqosplus must be disabled in P1A"
+              exit 1
+            fi
+            if grep -q '^CONFIG_PACKAGE_kmod-ifb=y' .config; then
+              echo "ERROR: kmod-ifb must be disabled in P1A"
+              exit 1
+            fi
+            if grep -q '^CONFIG_PACKAGE_tc-tiny=y' .config; then
+              echo "ERROR: tc-tiny must be disabled in P1A"
+              exit 1
+            fi
+            if grep -q '^CONFIG_PACKAGE_nftables-json=y' .config; then
+              echo "ERROR: nftables-json must be disabled in P1A"
+              exit 1
+            fi
+            if grep -q '^CONFIG_PACKAGE_bc=y' .config; then
+              echo "ERROR: bc must be disabled in P1A"
               exit 1
             fi
           } 2>&1 | tee logs/08_diy_part2_and_defconfig.log
@@ -227,14 +256,16 @@ jobs:
             grep -q '^CONFIG_PACKAGE_luci-app-openlist=y' .config
             grep -q '^CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y' .config
 
-            echo "===== Required stage P1 popular packages ====="
+            echo "===== Required stage P1A Lucky-only packages ====="
             grep -q '^CONFIG_PACKAGE_lucky=y' .config
             grep -q '^CONFIG_PACKAGE_luci-app-lucky=y' .config
-            grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config
-            grep -q '^CONFIG_PACKAGE_kmod-ifb=y' .config
-            grep -q '^CONFIG_PACKAGE_tc-tiny=y' .config
-            grep -q '^CONFIG_PACKAGE_nftables-json=y' .config
-            grep -q '^CONFIG_PACKAGE_bc=y' .config
+
+            echo "===== Ensure EQOS Plus disabled in P1A ====="
+            ! grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config
+            ! grep -q '^CONFIG_PACKAGE_kmod-ifb=y' .config
+            ! grep -q '^CONFIG_PACKAGE_tc-tiny=y' .config
+            ! grep -q '^CONFIG_PACKAGE_nftables-json=y' .config
+            ! grep -q '^CONFIG_PACKAGE_bc=y' .config
 
             echo "===== Required fixed minimal DiskMan package ====="
             grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|fdisk|blkid|lsblk|partx-utils|losetup|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils)' .config || true
@@ -246,6 +277,7 @@ jobs:
                 echo "OK: ${key}=y"
               else
                 echo "ERROR: missing ${key}=y"
+                echo "----- matched lines for ${key} -----"
                 grep -E "^${key}=|^# ${key} is not set" .config || true
                 exit 1
               fi
@@ -253,7 +285,7 @@ jobs:
 
             test -d package/luci-app-diskman
             test -d package/lucky
-            test -d package/luci-app-eqosplus
+            test ! -d package/luci-app-eqosplus
 
             require_config CONFIG_PACKAGE_luci-app-diskman
             require_config CONFIG_PACKAGE_luci-i18n-diskman-zh-cn
@@ -279,11 +311,6 @@ jobs:
 
             require_config CONFIG_PACKAGE_lucky
             require_config CONFIG_PACKAGE_luci-app-lucky
-            require_config CONFIG_PACKAGE_luci-app-eqosplus
-            require_config CONFIG_PACKAGE_kmod-ifb
-            require_config CONFIG_PACKAGE_tc-tiny
-            require_config CONFIG_PACKAGE_nftables-json
-            require_config CONFIG_PACKAGE_bc
 
             echo "===== Required ttyd packages ====="
             grep -q '^CONFIG_PACKAGE_ttyd=y' .config
@@ -411,7 +438,13 @@ jobs:
             echo "manifest=$manifest"
 
             echo "===== suspicious packages in manifest ====="
-            grep -Ei 'diskman|lucky|eqos|rpcd-mod-file|btrfs|exfat|f2fs|ntfs|dosfstools|kmod-fs|usb-storage|block-mount|mount-utils' "$manifest" || true
+            grep -Ei 'diskman|lucky|eqos|ifb|nftables|tc-tiny|rpcd-mod-file|btrfs|exfat|f2fs|ntfs|dosfstools|kmod-fs|usb-storage|block-mount|mount-utils' "$manifest" || true
+
+            if grep -Eq '^(luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc)([[:space:]-]|$)' "$manifest"; then
+              echo "ERROR: EQOS Plus related package found in P1A manifest:"
+              grep -E '^(luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc)([[:space:]-]|$)' "$manifest" || true
+              exit 1
+            fi
 
             forbidden='^(btrfs-progs|kmod-fs-btrfs|kmod-fs-exfat|kmod-fs-msdos|kmod-fs-ntfs3|kmod-fs-vfat|dosfstools|exfat-fsck|exfat-mkfs|f2fsck|mkf2fs|libf2fs6|ntfs-3g-utils|kmod-usb-storage|kmod-usb-storage-uas|block-mount)([[:space:]-]|$)'
 
@@ -467,17 +500,23 @@ jobs:
 
             {
               echo "===== grep important packages from .config ====="
-              grep -E 'CONFIG_PACKAGE_(luci|rpcd|diskman|openlist|lucky|eqos|ttyd|argon|parted|lsblk|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils|tc-tiny|nftables-json|kmod-ifb|bc)' .config || true
+              grep -E 'CONFIG_PACKAGE_(luci|rpcd|diskman|openlist|lucky|eqos|ifb|tc-tiny|nftables-json|bc|ttyd|argon|parted|lsblk|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils)' .config || true
               echo
               echo "===== grep important packages from tmp/.packageinfo ====="
-              grep -nE 'Package: (luci-app-diskman|luci-i18n-diskman|luci-app-lucky|lucky|luci-app-eqosplus|rpcd-mod-file|luci-base|kmod-fs-ext4|mount-utils|tc-tiny|nftables-json|kmod-ifb|bc)|Depends:|Source-Makefile:.*(diskman|lucky|eqos)' tmp/.packageinfo 2>/dev/null || true
+              grep -nE 'Package: (luci-app-diskman|luci-i18n-diskman|luci-app-lucky|lucky|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|rpcd-mod-file|luci-base|kmod-fs-ext4|mount-utils)|Depends:|Source-Makefile:.*(diskman|lucky|eqos)' tmp/.packageinfo 2>/dev/null || true
             } > "$GITHUB_WORKSPACE/diagnostics/openwrt/package/important_package_grep.txt" 2>&1
 
             {
               echo "===== Third-party package files ====="
+              find package/luci-theme-argon -maxdepth 6 -type f | sort || true
               find package/luci-app-diskman -maxdepth 6 -type f | sort || true
               find package/lucky -maxdepth 6 -type f | sort || true
-              find package/luci-app-eqosplus -maxdepth 6 -type f | sort || true
+              echo
+              echo "===== Ensure no EQOS package directory ====="
+              find package -maxdepth 3 -iname '*eqos*' -print || true
+              echo
+              echo "===== Argon Makefile ====="
+              sed -n '1,220p' package/luci-theme-argon/Makefile 2>/dev/null || true
               echo
               echo "===== DiskMan Makefile ====="
               sed -n '1,260p' package/luci-app-diskman/Makefile 2>/dev/null || true
@@ -486,11 +525,8 @@ jobs:
               sed -n '1,220p' package/lucky/luci-app-lucky/Makefile 2>/dev/null || true
               sed -n '1,260p' package/lucky/lucky/Makefile 2>/dev/null || true
               echo
-              echo "===== EQOS Plus Makefile ====="
-              sed -n '1,220p' package/luci-app-eqosplus/Makefile 2>/dev/null || true
-              echo
               echo "===== Embedded uci-defaults files ====="
-              find files/etc/uci-defaults -maxdepth 1 -type f -print -exec sed -n '1,220p' {} \; 2>/dev/null || true
+              find files/etc/uci-defaults -maxdepth 1 -type f -print -exec sed -n '1,240p' {} \; 2>/dev/null || true
             } > "$GITHUB_WORKSPACE/diagnostics/openwrt/package/third_party_tree_and_makefiles.txt" 2>&1
 
             {
@@ -546,7 +582,7 @@ jobs:
       - name: Generate release tag
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
         run: |
-          echo "RELEASE_TAG=OpenWrt_F50_P1_Lucky_EQOSPlus_Fixed_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_F50_P1A_LuckyOnly_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
@@ -555,7 +591,7 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           body: |
-            RAX3000M F50 stage P1 fixed build.
+            RAX3000M F50 stage P1A Lucky-only build.
 
             Included:
             - F50 basic USB Ethernet drivers
@@ -567,14 +603,9 @@ jobs:
             - patched minimal DiskMan LuCI package
             - DiskMan Lua LuCI runtime dependencies
             - ext4 support for existing /dev/fitrw persistent overlay
-            - stage P1 popular LuCI apps:
-              - luci-app-lucky
+            - stage P1A:
               - lucky
-              - luci-app-eqosplus
-              - tc-tiny
-              - nftables-json
-              - kmod-ifb
-              - bc
+              - luci-app-lucky
 
             Notes:
             - Full diagnostics are uploaded as a workflow artifact.
@@ -582,8 +613,16 @@ jobs:
             - STRICT_MANIFEST_CHECK=false by default.
             - This build does not include /dev/fitrw format script.
             - This build does not include F50 automatic USB reprobe scripts.
+            - WiFi uci-defaults script only enables WiFi and does not overwrite existing SSID/password.
+            - Lucky is cloned in diy-part1.sh.
+            - OpenList and DiskMan patching remain in diy-part2.sh.
 
-            Still removed for this test:
+            Explicitly removed for this test:
+            - luci-app-eqosplus
+            - kmod-ifb
+            - tc-tiny
+            - nftables-json
+            - bc
             - luci-app-argon-config
             - tempinfo / custom temperature LuCI JS
             - dark-line CSS patch
