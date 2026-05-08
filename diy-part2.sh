@@ -1,74 +1,77 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: stage P1 fixed2 - avoid /tmp/luci-* conflict ====="
+echo "===== DIY part2: stage P1A - OpenList + DiskMan patch + final config, Lucky only ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
 
+echo "===== Verify part1 packages ====="
+
+if [ ! -f package/luci-theme-argon/Makefile ]; then
+    echo "ERROR: luci-theme-argon missing, check diy-part1.sh"
+    find package -maxdepth 4 -type d -iname '*argon*' -print || true
+    exit 1
+fi
+
+if [ ! -f package/lucky/luci-app-lucky/Makefile ]; then
+    echo "ERROR: luci-app-lucky missing, check diy-part1.sh"
+    find package -maxdepth 5 -type f -name Makefile | grep -i lucky || true
+    exit 1
+fi
+
+if [ ! -f package/lucky/lucky/Makefile ]; then
+    echo "ERROR: lucky core package missing, check diy-part1.sh"
+    find package -maxdepth 5 -type f -name Makefile | grep -i lucky || true
+    exit 1
+fi
+
+if [ -d package/luci-app-eqosplus ]; then
+    echo "ERROR: package/luci-app-eqosplus exists, but P1A must not include EQOS Plus"
+    find package/luci-app-eqosplus -maxdepth 4 -type f | sort || true
+    exit 1
+fi
+
 echo "===== Add OpenList source ====="
 
-# OpenList 官方建议替换 golang feed
+# OpenList 的 golang feed 替换要放在 feeds update/install 之后，
+# 因为 feeds/packages 是 feeds update 后产生的。
 if [ -d feeds/packages ]; then
     rm -rf feeds/packages/lang/golang
     mkdir -p feeds/packages/lang
     git clone --depth 1 -b 24.x https://github.com/OpenListTeam/packages_lang_golang.git feeds/packages/lang/golang
 else
-    echo "WARNING: feeds/packages not found, skip golang replacement"
+    echo "ERROR: feeds/packages not found after feeds update"
+    find feeds -maxdepth 2 -type d 2>/dev/null | sort || true
+    exit 1
 fi
 
 rm -rf package/openlist
 git clone --depth 1 https://github.com/OpenListTeam/OpenList-OpenWRT.git package/openlist
 
-echo "===== Add Lucky source - stage P1 ====="
-
-rm -rf package/lucky
-git clone --depth 1 https://github.com/sirpdboy/luci-app-lucky.git package/lucky
-
-if [ ! -f package/lucky/luci-app-lucky/Makefile ]; then
-    echo "ERROR: luci-app-lucky Makefile missing"
-    find package/lucky -maxdepth 4 -type f -name Makefile -print || true
-    exit 1
-fi
-
-if [ ! -f package/lucky/lucky/Makefile ]; then
-    echo "ERROR: lucky Makefile missing"
-    find package/lucky -maxdepth 4 -type f -name Makefile -print || true
-    exit 1
-fi
-
-echo "===== Add EQOS Plus source - stage P1 ====="
-
-rm -rf package/luci-app-eqosplus
-git clone --depth 1 https://github.com/sirpdboy/luci-app-eqosplus.git package/luci-app-eqosplus
-
-if [ ! -f package/luci-app-eqosplus/Makefile ]; then
-    echo "ERROR: luci-app-eqosplus Makefile missing"
-    find package/luci-app-eqosplus -maxdepth 4 -type f -name Makefile -print || true
+if [ ! -d package/openlist ]; then
+    echo "ERROR: package/openlist missing"
     exit 1
 fi
 
 echo "===== Add DiskMan source ====="
 
-# 关键修复：
-# 不要使用 /tmp/luci-* 作为临时目录。
-# luci-app-eqosplus 的 post-install 里会执行 rm -f /tmp/luci-*，
-# 如果 /tmp 下存在 /tmp/luci-app-diskman-src 这种目录，就会因为 rm -f 不能删除目录而失败。
-# 所以这里改成 /tmp/diskman-src-p1，并且复制完立即删除。
+# 不使用 /tmp/luci-* 临时目录，避免其他 LuCI 包 post-install 清理 /tmp/luci-* 时误撞目录。
 rm -rf package/luci-app-diskman
-rm -rf /tmp/diskman-src-p1
+rm -rf /tmp/diskman-src-p1a
 rm -rf /tmp/luci-app-diskman-src
 
-git clone --depth 1 https://github.com/lisaac/luci-app-diskman.git /tmp/diskman-src-p1
+git clone --depth 1 https://github.com/lisaac/luci-app-diskman.git /tmp/diskman-src-p1a
 
-if [ ! -f /tmp/diskman-src-p1/applications/luci-app-diskman/Makefile ]; then
+if [ ! -f /tmp/diskman-src-p1a/applications/luci-app-diskman/Makefile ]; then
     echo "ERROR: DiskMan application Makefile not found"
-    find /tmp/diskman-src-p1 -maxdepth 5 -type f -name Makefile -print || true
+    find /tmp/diskman-src-p1a -maxdepth 5 -type f -name Makefile -print || true
     exit 1
 fi
 
-cp -a /tmp/diskman-src-p1/applications/luci-app-diskman package/luci-app-diskman
-rm -rf /tmp/diskman-src-p1
+cp -a /tmp/diskman-src-p1a/applications/luci-app-diskman package/luci-app-diskman
+rm -rf /tmp/diskman-src-p1a
+rm -rf /tmp/luci-app-diskman-src
 
 if [ ! -d package/luci-app-diskman ]; then
     echo "ERROR: package/luci-app-diskman missing after copy"
@@ -86,8 +89,6 @@ find /tmp -maxdepth 1 -name 'luci-*' -print -exec rm -rf {} \; 2>/dev/null || tr
 
 echo "===== Fix DiskMan LuCI translation dirs ====="
 
-# OpenWrt 新 LuCI 语言目录用 zh_Hans / zh_Hant。
-# lisaac/luci-app-diskman 老仓库里是 zh-cn / zh-tw。
 if [ -d package/luci-app-diskman/po/zh-cn ]; then
     rm -rf package/luci-app-diskman/po/zh_Hans
     mv package/luci-app-diskman/po/zh-cn package/luci-app-diskman/po/zh_Hans
@@ -117,8 +118,6 @@ PKG_LICENSE:=AGPL-3.0
 LUCI_TITLE:=Disk Manager interface for LuCI
 LUCI_DESCRIPTION:=Disk Manager interface for LuCI
 
-# 最小化依赖：
-# 保留 DiskMan 基础页面需要的 LuCI / 磁盘工具。
 LUCI_DEPENDS:=+luci-compat +luci-lib-ipkg +e2fsprogs +parted +smartmontools +blkid +lsblk
 
 define Package/$(PKG_NAME)/config
@@ -161,9 +160,9 @@ EOF_DISKMAN_MAKEFILE
 echo "===== DiskMan Makefile after rewrite ====="
 sed -n '1,220p' package/luci-app-diskman/Makefile
 
-echo "===== Stage P1 package tree check ====="
+echo "===== Stage P1A package tree check ====="
+find package/luci-theme-argon -maxdepth 3 -type f -name Makefile -print || true
 find package/lucky -maxdepth 3 -type f -name Makefile -print || true
-find package/luci-app-eqosplus -maxdepth 3 -type f -name Makefile -print || true
 find package/luci-app-diskman -maxdepth 3 -type d | sort || true
 find package/luci-app-diskman -maxdepth 4 -type f -iname '*.po' | sort || true
 
@@ -171,7 +170,6 @@ find package/luci-app-diskman -maxdepth 4 -type f -iname '*.po' | sort || true
 rm -rf files
 mkdir -p files/etc/uci-defaults
 
-# 直接重写 .config，避免 openwrt_one 或旧包残留
 cat > .config <<'EOF_CONFIG'
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_filogic=y
@@ -199,16 +197,16 @@ CONFIG_PACKAGE_openlist=y
 CONFIG_PACKAGE_luci-app-openlist=y
 CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y
 
-# Lucky - stage P1
+# Lucky only - stage P1A
 CONFIG_PACKAGE_lucky=y
 CONFIG_PACKAGE_luci-app-lucky=y
 
-# EQOS Plus - stage P1
-CONFIG_PACKAGE_luci-app-eqosplus=y
-CONFIG_PACKAGE_kmod-ifb=y
-CONFIG_PACKAGE_tc-tiny=y
-CONFIG_PACKAGE_nftables-json=y
-CONFIG_PACKAGE_bc=y
+# EQOS Plus disabled - stage P1A
+# CONFIG_PACKAGE_luci-app-eqosplus is not set
+# CONFIG_PACKAGE_kmod-ifb is not set
+# CONFIG_PACKAGE_tc-tiny is not set
+# CONFIG_PACKAGE_nftables-json is not set
+# CONFIG_PACKAGE_bc is not set
 
 # Minimal DiskMan LuCI test
 CONFIG_PACKAGE_luci-app-diskman=y
@@ -292,7 +290,7 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 # CONFIG_PACKAGE_luci-app-diskman_INCLUDE_kmod_md_raid456 is not set
 # CONFIG_PACKAGE_luci-app-diskman_INCLUDE_kmod_md_linears is not set
 
-# Still disabled in stage P1
+# Still disabled in stage P1A
 # CONFIG_PACKAGE_rpcd-mod-file is not set
 # CONFIG_PACKAGE_luci-app-argon-config is not set
 # CONFIG_PACKAGE_kmod-usb-storage is not set
@@ -347,18 +345,30 @@ uci show wireless 2>/dev/null | grep -q '=wifi-device' || {
     exit 1
 }
 
+# 只启用 radio，不覆盖用户已有 country/channel/htmode
 for dev in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-device/\1/p"); do
     uci -q set "${dev}.disabled=0"
-    uci -q set "${dev}.country=CN"
+
+    if [ -z "$(uci -q get "${dev}.country" 2>/dev/null)" ]; then
+        uci -q set "${dev}.country=CN"
+    fi
 
     band="$(uci -q get "${dev}.band" || true)"
 
-    if [ "$band" = "2g" ]; then
-        uci -q set "${dev}.channel=1"
-        uci -q set "${dev}.htmode=HE40"
-    elif [ "$band" = "5g" ]; then
-        uci -q set "${dev}.channel=36"
-        uci -q set "${dev}.htmode=HE80"
+    if [ -z "$(uci -q get "${dev}.channel" 2>/dev/null)" ]; then
+        if [ "$band" = "2g" ]; then
+            uci -q set "${dev}.channel=1"
+        elif [ "$band" = "5g" ]; then
+            uci -q set "${dev}.channel=36"
+        fi
+    fi
+
+    if [ -z "$(uci -q get "${dev}.htmode" 2>/dev/null)" ]; then
+        if [ "$band" = "2g" ]; then
+            uci -q set "${dev}.htmode=HE40"
+        elif [ "$band" = "5g" ]; then
+            uci -q set "${dev}.htmode=HE80"
+        fi
     fi
 done
 
@@ -366,26 +376,33 @@ i=0
 for iface in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-iface/\1/p"); do
     uci -q set "${iface}.disabled=0"
     uci -q set "${iface}.mode=ap"
-    uci -q set "${iface}.network=lan"
+
+    if [ -z "$(uci -q get "${iface}.network" 2>/dev/null)" ]; then
+        uci -q set "${iface}.network=lan"
+    fi
 
     dev="$(uci -q get "${iface}.device" || true)"
     band="$(uci -q get "wireless.${dev}.band" || true)"
 
-    if [ "$band" = "2g" ]; then
-        uci -q set "${iface}.ssid=OpenWrt_2G"
-    elif [ "$band" = "5g" ]; then
-        uci -q set "${iface}.ssid=OpenWrt_5G"
-    elif [ "$i" = "0" ]; then
-        uci -q set "${iface}.ssid=OpenWrt_2G"
-    elif [ "$i" = "1" ]; then
-        uci -q set "${iface}.ssid=OpenWrt_5G"
-    else
-        uci -q set "${iface}.ssid=OpenWrt_WiFi_$i"
+    # 关键：已有 SSID 不覆盖
+    if [ -z "$(uci -q get "${iface}.ssid" 2>/dev/null)" ]; then
+        if [ "$band" = "2g" ]; then
+            uci -q set "${iface}.ssid=OpenWrt_2G"
+        elif [ "$band" = "5g" ]; then
+            uci -q set "${iface}.ssid=OpenWrt_5G"
+        elif [ "$i" = "0" ]; then
+            uci -q set "${iface}.ssid=OpenWrt_2G"
+        elif [ "$i" = "1" ]; then
+            uci -q set "${iface}.ssid=OpenWrt_5G"
+        else
+            uci -q set "${iface}.ssid=OpenWrt_WiFi_$i"
+        fi
     fi
 
-    # 测试阶段默认无密码
-    uci -q set "${iface}.encryption=none"
-    uci -q delete "${iface}.key"
+    # 关键：已有 encryption/key 不覆盖，不 delete key
+    if [ -z "$(uci -q get "${iface}.encryption" 2>/dev/null)" ]; then
+        uci -q set "${iface}.encryption=none"
+    fi
 
     i=$((i + 1))
 done
