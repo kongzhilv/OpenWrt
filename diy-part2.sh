@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: stage P1 fixed - RAX3000M F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky EQOSPlus ====="
+echo "===== DIY part2: stage P1 fixed2 - avoid /tmp/luci-* conflict ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -50,22 +50,25 @@ fi
 
 echo "===== Add DiskMan source ====="
 
-# 重点：
-# 不要把整个仓库直接放到 package/luci-app-diskman。
-# 原仓库真正的 OpenWrt 包在 applications/luci-app-diskman。
-# 这里先 clone 到 /tmp，再把应用包目录复制到 package/luci-app-diskman。
+# 关键修复：
+# 不要使用 /tmp/luci-* 作为临时目录。
+# luci-app-eqosplus 的 post-install 里会执行 rm -f /tmp/luci-*，
+# 如果 /tmp 下存在 /tmp/luci-app-diskman-src 这种目录，就会因为 rm -f 不能删除目录而失败。
+# 所以这里改成 /tmp/diskman-src-p1，并且复制完立即删除。
 rm -rf package/luci-app-diskman
+rm -rf /tmp/diskman-src-p1
 rm -rf /tmp/luci-app-diskman-src
 
-git clone --depth 1 https://github.com/lisaac/luci-app-diskman.git /tmp/luci-app-diskman-src
+git clone --depth 1 https://github.com/lisaac/luci-app-diskman.git /tmp/diskman-src-p1
 
-if [ ! -f /tmp/luci-app-diskman-src/applications/luci-app-diskman/Makefile ]; then
+if [ ! -f /tmp/diskman-src-p1/applications/luci-app-diskman/Makefile ]; then
     echo "ERROR: DiskMan application Makefile not found"
-    find /tmp/luci-app-diskman-src -maxdepth 5 -type f -name Makefile -print || true
+    find /tmp/diskman-src-p1 -maxdepth 5 -type f -name Makefile -print || true
     exit 1
 fi
 
-cp -a /tmp/luci-app-diskman-src/applications/luci-app-diskman package/luci-app-diskman
+cp -a /tmp/diskman-src-p1/applications/luci-app-diskman package/luci-app-diskman
+rm -rf /tmp/diskman-src-p1
 
 if [ ! -d package/luci-app-diskman ]; then
     echo "ERROR: package/luci-app-diskman missing after copy"
@@ -77,6 +80,9 @@ if [ ! -f package/luci-app-diskman/Makefile ]; then
     find package/luci-app-diskman -maxdepth 5 -type f -print || true
     exit 1
 fi
+
+echo "===== Ensure no /tmp/luci-* directories before package install ====="
+find /tmp -maxdepth 1 -name 'luci-*' -print -exec rm -rf {} \; 2>/dev/null || true
 
 echo "===== Fix DiskMan LuCI translation dirs ====="
 
