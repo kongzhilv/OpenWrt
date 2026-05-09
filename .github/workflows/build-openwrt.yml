@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky P1A
+name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky P1A-2 NoAutostart
 
 on:
   workflow_dispatch:
@@ -29,7 +29,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-p1a-lucky-only
+    name: build-f50-p1a2-lucky-installed-autostart-disabled
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
@@ -196,26 +196,26 @@ jobs:
               exit 1
             fi
 
-            echo "===== Ensure EQOS Plus is disabled in P1A ====="
+            echo "===== Ensure EQOS Plus is disabled in P1A-2 ====="
             if grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config; then
-              echo "ERROR: luci-app-eqosplus must be disabled in P1A"
+              echo "ERROR: luci-app-eqosplus must be disabled in P1A-2"
               exit 1
             fi
             if grep -q '^CONFIG_PACKAGE_kmod-ifb=y' .config; then
-              echo "ERROR: kmod-ifb must be disabled in P1A"
+              echo "ERROR: kmod-ifb must be disabled in P1A-2"
               exit 1
             fi
             if grep -q '^CONFIG_PACKAGE_tc-tiny=y' .config; then
-              echo "ERROR: tc-tiny must be disabled in P1A"
+              echo "ERROR: tc-tiny must be disabled in P1A-2"
               exit 1
             fi
             if grep -q '^CONFIG_PACKAGE_bc=y' .config; then
-              echo "ERROR: bc must be disabled in P1A"
+              echo "ERROR: bc must be disabled in P1A-2"
               exit 1
             fi
 
             echo "===== Note ====="
-            echo "nftables-json is allowed in P1A because modern OpenWrt firewall4 may select it."
+            echo "nftables-json is allowed because firewall4/base system may select it."
           } 2>&1 | tee logs/08_diy_part2_and_defconfig.log
 
       - name: Validate final config
@@ -255,18 +255,18 @@ jobs:
             grep -q '^CONFIG_PACKAGE_luci-app-openlist=y' .config
             grep -q '^CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y' .config
 
-            echo "===== Required stage P1A Lucky-only packages ====="
+            echo "===== Required stage P1A-2 Lucky packages ====="
             grep -q '^CONFIG_PACKAGE_lucky=y' .config
             grep -q '^CONFIG_PACKAGE_luci-app-lucky=y' .config
 
-            echo "===== Ensure EQOS Plus disabled in P1A ====="
+            echo "===== Ensure EQOS Plus disabled in P1A-2 ====="
             ! grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-ifb=y' .config
             ! grep -q '^CONFIG_PACKAGE_tc-tiny=y' .config
             ! grep -q '^CONFIG_PACKAGE_bc=y' .config
 
             echo "===== Note ====="
-            echo "nftables-json is allowed in P1A because it can be selected by firewall4/base system."
+            echo "nftables-json is allowed in P1A-2 because it can be selected by firewall4/base system."
 
             echo "===== Required fixed minimal DiskMan package ====="
             grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|fdisk|blkid|lsblk|partx-utils|losetup|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils)' .config || true
@@ -344,8 +344,9 @@ jobs:
             find files -type f | sort
             test -f files/etc/uci-defaults/01-enable-wifi
             test -f files/etc/uci-defaults/02-set-argon-theme
+            test -f files/etc/uci-defaults/03-disable-lucky-autostart
 
-            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme)$' || true)"
+            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme|files/etc/uci-defaults/03-disable-lucky-autostart)$' || true)"
             if [ -n "$bad_files" ]; then
               echo "ERROR: unexpected embedded files:"
               echo "$bad_files"
@@ -442,13 +443,19 @@ jobs:
             grep -Ei 'diskman|lucky|eqos|ifb|nftables|tc-tiny|rpcd-mod-file|btrfs|exfat|f2fs|ntfs|dosfstools|kmod-fs|usb-storage|block-mount|mount-utils' "$manifest" || true
 
             if grep -Eq '^(luci-app-eqosplus|kmod-ifb|tc-tiny|bc)([[:space:]-]|$)' "$manifest"; then
-              echo "ERROR: EQOS Plus related package found in P1A manifest:"
+              echo "ERROR: EQOS Plus related package found in P1A-2 manifest:"
               grep -E '^(luci-app-eqosplus|kmod-ifb|tc-tiny|bc)([[:space:]-]|$)' "$manifest" || true
               exit 1
             fi
 
+            if ! grep -Eq '^(lucky|luci-app-lucky)([[:space:]-]|$)' "$manifest"; then
+              echo "ERROR: lucky packages not found in P1A-2 manifest"
+              grep -Ei 'lucky' "$manifest" || true
+              exit 1
+            fi
+
             echo "===== Note ====="
-            echo "nftables-json is allowed in P1A and is not treated as EQOS Plus residue."
+            echo "nftables-json is allowed in P1A-2 and is not treated as EQOS residue."
 
             forbidden='^(btrfs-progs|kmod-fs-btrfs|kmod-fs-exfat|kmod-fs-msdos|kmod-fs-ntfs3|kmod-fs-vfat|dosfstools|exfat-fsck|exfat-mkfs|f2fsck|mkf2fs|libf2fs6|ntfs-3g-utils|kmod-usb-storage|kmod-usb-storage-uas|block-mount)([[:space:]-]|$)'
 
@@ -530,7 +537,7 @@ jobs:
               sed -n '1,260p' package/lucky/lucky/Makefile 2>/dev/null || true
               echo
               echo "===== Embedded uci-defaults files ====="
-              find files/etc/uci-defaults -maxdepth 1 -type f -print -exec sed -n '1,260p' {} \; 2>/dev/null || true
+              find files/etc/uci-defaults -maxdepth 1 -type f -print -exec sed -n '1,280p' {} \; 2>/dev/null || true
             } > "$GITHUB_WORKSPACE/diagnostics/openwrt/package/third_party_tree_and_makefiles.txt" 2>&1
 
             {
@@ -586,7 +593,7 @@ jobs:
       - name: Generate release tag
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
         run: |
-          echo "RELEASE_TAG=OpenWrt_F50_P1A_LuckyOnly_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_F50_P1A2_LuckyInstalled_AutostartDisabled_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
@@ -595,7 +602,12 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           body: |
-            RAX3000M F50 stage P1A Lucky-only build.
+            RAX3000M F50 stage P1A-2 build.
+
+            Purpose:
+            - Keep Lucky installed.
+            - Disable Lucky autostart by uci-defaults.
+            - Test whether F50 hardboot issue is caused by Lucky running at boot or merely by Lucky being present in rootfs.
 
             Included:
             - F50 basic USB Ethernet drivers
@@ -607,20 +619,19 @@ jobs:
             - patched minimal DiskMan LuCI package
             - DiskMan Lua LuCI runtime dependencies
             - ext4 support for existing /dev/fitrw persistent overlay
-            - stage P1A:
-              - lucky
-              - luci-app-lucky
+            - lucky
+            - luci-app-lucky
+            - uci-defaults/03-disable-lucky-autostart
 
             Notes:
+            - Lucky is installed but disabled from boot.
             - Full diagnostics are uploaded as a workflow artifact.
             - Manifest package warnings do not block artifact upload by default.
             - STRICT_MANIFEST_CHECK=false by default.
             - This build does not include /dev/fitrw format script.
             - This build does not include F50 automatic USB reprobe scripts.
-            - WiFi uci-defaults script only enables WiFi and does not overwrite existing SSID/password.
-            - Lucky is cloned in diy-part1.sh.
-            - OpenList and DiskMan patching remain in diy-part2.sh.
-            - nftables-json may still exist because it can be selected by firewall4/base system; it is not treated as EQOS Plus residue.
+            - WiFi uci-defaults script forces split SSID: OpenWrt_2G / OpenWrt_5G.
+            - nftables-json may still exist because it can be selected by firewall4/base system; it is not treated as EQOS residue.
 
             Explicitly removed for this test:
             - luci-app-eqosplus
