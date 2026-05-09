@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: stage P1A - OpenList + DiskMan patch + final config, Lucky only ====="
+echo "===== DIY part2: stage P1A-2 clean scripts, force split WiFi SSID ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -27,15 +27,13 @@ if [ ! -f package/lucky/lucky/Makefile ]; then
 fi
 
 if [ -d package/luci-app-eqosplus ]; then
-    echo "ERROR: package/luci-app-eqosplus exists, but P1A must not include EQOS Plus"
+    echo "ERROR: package/luci-app-eqosplus exists, but this build must not include EQOS Plus"
     find package/luci-app-eqosplus -maxdepth 4 -type f | sort || true
     exit 1
 fi
 
 echo "===== Add OpenList source ====="
 
-# OpenList 的 golang feed 替换要放在 feeds update/install 之后，
-# 因为 feeds/packages 是 feeds update 后产生的。
 if [ -d feeds/packages ]; then
     rm -rf feeds/packages/lang/golang
     mkdir -p feeds/packages/lang
@@ -56,21 +54,20 @@ fi
 
 echo "===== Add DiskMan source ====="
 
-# 不使用 /tmp/luci-* 临时目录，避免其他 LuCI 包 post-install 清理 /tmp/luci-* 时误撞目录。
 rm -rf package/luci-app-diskman
-rm -rf /tmp/diskman-src-p1a
+rm -rf /tmp/diskman-src-p1a2
 rm -rf /tmp/luci-app-diskman-src
 
-git clone --depth 1 https://github.com/lisaac/luci-app-diskman.git /tmp/diskman-src-p1a
+git clone --depth 1 https://github.com/lisaac/luci-app-diskman.git /tmp/diskman-src-p1a2
 
-if [ ! -f /tmp/diskman-src-p1a/applications/luci-app-diskman/Makefile ]; then
+if [ ! -f /tmp/diskman-src-p1a2/applications/luci-app-diskman/Makefile ]; then
     echo "ERROR: DiskMan application Makefile not found"
-    find /tmp/diskman-src-p1a -maxdepth 5 -type f -name Makefile -print || true
+    find /tmp/diskman-src-p1a2 -maxdepth 5 -type f -name Makefile -print || true
     exit 1
 fi
 
-cp -a /tmp/diskman-src-p1a/applications/luci-app-diskman package/luci-app-diskman
-rm -rf /tmp/diskman-src-p1a
+cp -a /tmp/diskman-src-p1a2/applications/luci-app-diskman package/luci-app-diskman
+rm -rf /tmp/diskman-src-p1a2
 rm -rf /tmp/luci-app-diskman-src
 
 if [ ! -d package/luci-app-diskman ]; then
@@ -160,13 +157,13 @@ EOF_DISKMAN_MAKEFILE
 echo "===== DiskMan Makefile after rewrite ====="
 sed -n '1,220p' package/luci-app-diskman/Makefile
 
-echo "===== Stage P1A package tree check ====="
+echo "===== Stage package tree check ====="
 find package/luci-theme-argon -maxdepth 3 -type f -name Makefile -print || true
 find package/lucky -maxdepth 3 -type f -name Makefile -print || true
 find package/luci-app-diskman -maxdepth 3 -type d | sort || true
 find package/luci-app-diskman -maxdepth 4 -type f -iname '*.po' | sort || true
 
-# 清掉旧 files，避免旧 F50/extroot/OpenClash/TempInfo 脚本进入固件
+# 只保留真正需要的 uci-defaults 脚本
 rm -rf files
 mkdir -p files/etc/uci-defaults
 
@@ -197,16 +194,17 @@ CONFIG_PACKAGE_openlist=y
 CONFIG_PACKAGE_luci-app-openlist=y
 CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y
 
-# Lucky only - stage P1A
+# Lucky installed but autostart disabled by uci-defaults
 CONFIG_PACKAGE_lucky=y
 CONFIG_PACKAGE_luci-app-lucky=y
 
-# EQOS Plus disabled - stage P1A
+# EQOS Plus disabled
 # CONFIG_PACKAGE_luci-app-eqosplus is not set
 # CONFIG_PACKAGE_kmod-ifb is not set
 # CONFIG_PACKAGE_tc-tiny is not set
-# CONFIG_PACKAGE_nftables-json is not set
 # CONFIG_PACKAGE_bc is not set
+
+# nftables-json may be selected by firewall4/base system, do not treat it as EQOS residue
 
 # Minimal DiskMan LuCI test
 CONFIG_PACKAGE_luci-app-diskman=y
@@ -290,7 +288,7 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 # CONFIG_PACKAGE_luci-app-diskman_INCLUDE_kmod_md_raid456 is not set
 # CONFIG_PACKAGE_luci-app-diskman_INCLUDE_kmod_md_linears is not set
 
-# Still disabled in stage P1A
+# Still disabled
 # CONFIG_PACKAGE_rpcd-mod-file is not set
 # CONFIG_PACKAGE_luci-app-argon-config is not set
 # CONFIG_PACKAGE_kmod-usb-storage is not set
@@ -336,7 +334,7 @@ EOF_CONFIG
 cat > files/etc/uci-defaults/01-enable-wifi <<'EOF_WIFI'
 #!/bin/sh
 
-logger -t enable-wifi "start"
+logger -t enable-wifi "start force split SSID"
 
 [ -s /etc/config/wireless ] || wifi config || true
 
@@ -345,7 +343,7 @@ uci show wireless 2>/dev/null | grep -q '=wifi-device' || {
     exit 1
 }
 
-# 只启用 radio，不覆盖用户已有 country/channel/htmode
+# 启用 radio，并设置基础参数
 for dev in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-device/\1/p"); do
     uci -q set "${dev}.disabled=0"
 
@@ -384,22 +382,21 @@ for iface in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-iface/\1/
     dev="$(uci -q get "${iface}.device" || true)"
     band="$(uci -q get "wireless.${dev}.band" || true)"
 
-    # 关键：已有 SSID 不覆盖
-    if [ -z "$(uci -q get "${iface}.ssid" 2>/dev/null)" ]; then
-        if [ "$band" = "2g" ]; then
-            uci -q set "${iface}.ssid=OpenWrt_2G"
-        elif [ "$band" = "5g" ]; then
-            uci -q set "${iface}.ssid=OpenWrt_5G"
-        elif [ "$i" = "0" ]; then
-            uci -q set "${iface}.ssid=OpenWrt_2G"
-        elif [ "$i" = "1" ]; then
-            uci -q set "${iface}.ssid=OpenWrt_5G"
-        else
-            uci -q set "${iface}.ssid=OpenWrt_WiFi_$i"
-        fi
+    # 强制分频命名：不管保留配置里原来是什么 SSID，都改成两个名字
+    if [ "$band" = "2g" ]; then
+        uci -q set "${iface}.ssid=OpenWrt_2G"
+    elif [ "$band" = "5g" ]; then
+        uci -q set "${iface}.ssid=OpenWrt_5G"
+    elif [ "$i" = "0" ]; then
+        uci -q set "${iface}.ssid=OpenWrt_2G"
+    elif [ "$i" = "1" ]; then
+        uci -q set "${iface}.ssid=OpenWrt_5G"
+    else
+        uci -q set "${iface}.ssid=OpenWrt_WiFi_$i"
     fi
 
-    # 关键：已有 encryption/key 不覆盖，不 delete key
+    # 密码和加密方式不强制删除。
+    # 没有 encryption 才默认设为无密码。
     if [ -z "$(uci -q get "${iface}.encryption" 2>/dev/null)" ]; then
         uci -q set "${iface}.encryption=none"
     fi
@@ -410,7 +407,7 @@ done
 uci commit wireless
 wifi reload || wifi || true
 
-logger -t enable-wifi "done"
+logger -t enable-wifi "done force split SSID"
 exit 0
 EOF_WIFI
 
@@ -431,5 +428,23 @@ exit 0
 EOF_ARGON
 
 chmod +x files/etc/uci-defaults/02-set-argon-theme
+
+cat > files/etc/uci-defaults/03-disable-lucky-autostart <<'EOF_LUCKY_DISABLE'
+#!/bin/sh
+
+logger -t disable-lucky-autostart "disable lucky autostart for F50 hardboot test"
+
+if [ -x /etc/init.d/lucky ]; then
+    /etc/init.d/lucky stop 2>/dev/null || true
+    /etc/init.d/lucky disable 2>/dev/null || true
+fi
+
+rm -f /etc/rc.d/S*lucky /etc/rc.d/K*lucky 2>/dev/null || true
+
+logger -t disable-lucky-autostart "done"
+exit 0
+EOF_LUCKY_DISABLE
+
+chmod +x files/etc/uci-defaults/03-disable-lucky-autostart
 
 echo "===== DIY part2 done ====="
