@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part1: stage P1A - add Argon and Lucky only ====="
+echo "===== DIY part1: add Argon, Lucky and Turbo ACC no-SFE ====="
 
 echo "===== Remove known conflicting third-party feed leftovers from feeds.conf.default ====="
 if [ -f feeds.conf.default ]; then
@@ -22,7 +22,7 @@ if [ ! -f package/luci-theme-argon/Makefile ]; then
     exit 1
 fi
 
-echo "===== Add Lucky source - stage P1A ====="
+echo "===== Add Lucky source ====="
 rm -rf package/lucky
 git clone --depth 1 https://github.com/sirpdboy/luci-app-lucky.git package/lucky
 
@@ -38,10 +38,51 @@ if [ ! -f package/lucky/lucky/Makefile ]; then
     exit 1
 fi
 
-echo "===== EQOS Plus is intentionally not cloned in P1A ====="
+echo "===== Add Turbo ACC source - no SFE stable mode ====="
+rm -rf package/turboacc
+rm -rf /tmp/turboacc-luci
+
+git clone --depth 1 --single-branch --branch luci https://github.com/chenmozhijin/turboacc.git /tmp/turboacc-luci
+
+if [ ! -f /tmp/turboacc-luci/add_turboacc.sh ]; then
+    echo "ERROR: turboacc add_turboacc.sh missing"
+    find /tmp/turboacc-luci -maxdepth 4 -type f | sort || true
+    exit 1
+fi
+
+chmod +x /tmp/turboacc-luci/add_turboacc.sh
+
+# Use no-SFE first:
+# - keep luci-app-turboacc
+# - keep nft-fullcone
+# - do not add shortcut-fe
+bash /tmp/turboacc-luci/add_turboacc.sh --no-sfe
+
+rm -rf /tmp/turboacc-luci
+
+if [ ! -f package/turboacc/luci-app-turboacc/Makefile ]; then
+    echo "ERROR: luci-app-turboacc Makefile missing"
+    find package/turboacc -maxdepth 5 -type f -name Makefile -print || true
+    exit 1
+fi
+
+if [ ! -f package/turboacc/nft-fullcone/Makefile ]; then
+    echo "ERROR: nft-fullcone Makefile missing"
+    find package/turboacc -maxdepth 5 -type f -name Makefile -print || true
+    exit 1
+fi
+
+if find package/turboacc -maxdepth 3 -type d -iname '*shortcut*' | grep -q .; then
+    echo "ERROR: shortcut-fe exists, but this build uses Turbo ACC no-SFE mode"
+    find package/turboacc -maxdepth 4 -type d -iname '*shortcut*' -print || true
+    exit 1
+fi
+
+echo "===== EQOS Plus is intentionally not cloned ====="
 
 echo "===== DIY part1 package tree check ====="
 find package/luci-theme-argon -maxdepth 3 -type f -name Makefile -print || true
 find package/lucky -maxdepth 3 -type f -name Makefile -print || true
+find package/turboacc -maxdepth 4 -type f -name Makefile -print || true
 
 echo "===== DIY part1 done ====="
