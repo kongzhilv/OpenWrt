@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: stage P1A-2 clean scripts, force split WiFi SSID ====="
+echo "===== DIY part2: Turbo ACC no-SFE, clean scripts, force split WiFi SSID ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -23,6 +23,24 @@ fi
 if [ ! -f package/lucky/lucky/Makefile ]; then
     echo "ERROR: lucky core package missing, check diy-part1.sh"
     find package -maxdepth 5 -type f -name Makefile | grep -i lucky || true
+    exit 1
+fi
+
+if [ ! -f package/turboacc/luci-app-turboacc/Makefile ]; then
+    echo "ERROR: luci-app-turboacc missing, check diy-part1.sh"
+    find package -maxdepth 6 -type f -name Makefile | grep -i turbo || true
+    exit 1
+fi
+
+if [ ! -f package/turboacc/nft-fullcone/Makefile ]; then
+    echo "ERROR: nft-fullcone missing, check diy-part1.sh"
+    find package/turboacc -maxdepth 6 -type f -name Makefile | sort || true
+    exit 1
+fi
+
+if find package/turboacc -maxdepth 3 -type d -iname '*shortcut*' | grep -q .; then
+    echo "ERROR: shortcut-fe exists, but this build must be Turbo ACC no-SFE"
+    find package/turboacc -maxdepth 4 -type d -iname '*shortcut*' -print || true
     exit 1
 fi
 
@@ -160,6 +178,7 @@ sed -n '1,220p' package/luci-app-diskman/Makefile
 echo "===== Stage package tree check ====="
 find package/luci-theme-argon -maxdepth 3 -type f -name Makefile -print || true
 find package/lucky -maxdepth 3 -type f -name Makefile -print || true
+find package/turboacc -maxdepth 4 -type f -name Makefile -print || true
 find package/luci-app-diskman -maxdepth 3 -type d | sort || true
 find package/luci-app-diskman -maxdepth 4 -type f -iname '*.po' | sort || true
 
@@ -197,6 +216,18 @@ CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y
 # Lucky installed but autostart disabled by uci-defaults
 CONFIG_PACKAGE_lucky=y
 CONFIG_PACKAGE_luci-app-lucky=y
+
+# Turbo ACC no-SFE stable mode
+CONFIG_PACKAGE_luci-app-turboacc=y
+CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING=y
+CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_BBR_CCA=y
+CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_NFT_FULLCONE=y
+# CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE is not set
+# CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_CM is not set
+# CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_DRV is not set
+CONFIG_PACKAGE_kmod-nft-offload=y
+CONFIG_PACKAGE_kmod-tcp-bbr=y
+CONFIG_PACKAGE_kmod-nft-fullcone=y
 
 # EQOS Plus disabled
 # CONFIG_PACKAGE_luci-app-eqosplus is not set
@@ -325,7 +356,6 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 # CONFIG_PACKAGE_usbmuxd is not set
 # CONFIG_PACKAGE_libimobiledevice is not set
 # CONFIG_PACKAGE_luci-app-openclash is not set
-# CONFIG_PACKAGE_luci-app-turboacc is not set
 # CONFIG_PACKAGE_dockerd is not set
 # CONFIG_PACKAGE_docker-compose is not set
 # CONFIG_PACKAGE_luci-app-dockerman is not set
@@ -446,5 +476,33 @@ exit 0
 EOF_LUCKY_DISABLE
 
 chmod +x files/etc/uci-defaults/03-disable-lucky-autostart
+
+cat > files/etc/uci-defaults/04-config-turboacc <<'EOF_TURBOACC'
+#!/bin/sh
+
+logger -t config-turboacc "configure Turbo ACC no-SFE stable mode"
+
+# Turbo ACC options
+uci -q set turboacc.config.sw_flow='1'
+uci -q set turboacc.config.hw_flow='1'
+uci -q set turboacc.config.sfe_flow='0'
+uci -q set turboacc.config.fullcone_nat='1'
+uci -q set turboacc.config.fullcone6='0'
+uci -q set turboacc.config.hw_wed='0'
+uci -q set turboacc.config.bbr_cca='1'
+uci -q commit turboacc
+
+# firewall4 flow offloading
+uci -q set firewall.@defaults[0].flow_offloading='1'
+uci -q set firewall.@defaults[0].flow_offloading_hw='1'
+uci -q commit firewall
+
+/etc/init.d/firewall restart 2>/dev/null || true
+
+logger -t config-turboacc "done"
+exit 0
+EOF_TURBOACC
+
+chmod +x files/etc/uci-defaults/04-config-turboacc
 
 echo "===== DIY part2 done ====="
