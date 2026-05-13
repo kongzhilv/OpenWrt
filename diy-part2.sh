@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: Turbo ACC no-SFE, clean scripts, force split WiFi SSID ====="
+echo "===== DIY part2: Turbo ACC no-SFE, F2FS fitrw support, clean scripts, force split WiFi SSID ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -259,6 +259,14 @@ CONFIG_PACKAGE_partx-utils=y
 CONFIG_PACKAGE_losetup=y
 CONFIG_PACKAGE_e2fsprogs=y
 CONFIG_PACKAGE_kmod-fs-ext4=y
+
+# F2FS support required for /dev/fitrw persistent overlay
+CONFIG_PACKAGE_kmod-fs-f2fs=y
+CONFIG_PACKAGE_f2fs-tools=y
+CONFIG_PACKAGE_f2fsck=y
+CONFIG_PACKAGE_mkf2fs=y
+CONFIG_PACKAGE_libf2fs6=y
+
 CONFIG_PACKAGE_mount-utils=y
 CONFIG_PACKAGE_smartmontools=y
 
@@ -334,9 +342,6 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 # CONFIG_PACKAGE_dosfstools is not set
 # CONFIG_PACKAGE_exfat-fsck is not set
 # CONFIG_PACKAGE_exfat-mkfs is not set
-# CONFIG_PACKAGE_f2fsck is not set
-# CONFIG_PACKAGE_mkf2fs is not set
-# CONFIG_PACKAGE_libf2fs6 is not set
 # CONFIG_PACKAGE_ntfs-3g-utils is not set
 # CONFIG_PACKAGE_mdadm is not set
 # CONFIG_PACKAGE_kmod-md-linear is not set
