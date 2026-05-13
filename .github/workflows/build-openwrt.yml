@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky TurboACC NoSFE
+name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky TurboACC NoSFE F2FS
 
 on:
   workflow_dispatch:
@@ -29,7 +29,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-lucky-turboacc-nosfe
+    name: build-f50-lucky-turboacc-nosfe-f2fs
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
@@ -164,46 +164,40 @@ jobs:
             grep -R "luci-app-turboacc" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
             grep -R "nft-fullcone" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
             grep -R "shortcut-fe" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
+            grep -R "f2fs" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
+            grep -R "mkf2fs" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
+            grep -R "libf2fs6" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
             grep -R "luci-app-eqosplus" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
 
             echo "===== Check important packages in final .config ====="
-            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|shortcut-fe|fast-classifier)' .config || true
-            grep -E '^# CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-turboacc|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|shortcut-fe|fast-classifier)' .config || true
+            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone|kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs|libf2fs6|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|shortcut-fe|fast-classifier)' .config || true
+            grep -E '^# CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-turboacc|kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs|libf2fs6|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|shortcut-fe|fast-classifier)' .config || true
 
             if ! grep -q '^CONFIG_PACKAGE_luci-app-diskman=y' .config; then
               echo "ERROR: luci-app-diskman still not selected after package metadata refresh"
-              echo "===== package/luci-app-diskman tree ====="
               find package/luci-app-diskman -maxdepth 5 -type f | sort || true
-              echo "===== package/luci-app-diskman Makefile ====="
               sed -n '1,220p' package/luci-app-diskman/Makefile || true
-              echo "===== tmp package index diskman search ====="
               grep -R "diskman" tmp 2>/dev/null | head -200 || true
               exit 1
             fi
 
             if ! grep -q '^CONFIG_PACKAGE_luci-app-lucky=y' .config; then
               echo "ERROR: luci-app-lucky not selected"
-              echo "===== package/lucky tree ====="
               find package/lucky -maxdepth 5 -type f | sort || true
-              echo "===== tmp package index lucky search ====="
               grep -R "luci-app-lucky" tmp 2>/dev/null | head -200 || true
               exit 1
             fi
 
             if ! grep -q '^CONFIG_PACKAGE_lucky=y' .config; then
               echo "ERROR: lucky core package not selected"
-              echo "===== package/lucky tree ====="
               find package/lucky -maxdepth 5 -type f | sort || true
-              echo "===== tmp package index lucky search ====="
               grep -R "Package: lucky" tmp/.packageinfo 2>/dev/null || true
               exit 1
             fi
 
             if ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc=y' .config; then
               echo "ERROR: luci-app-turboacc not selected"
-              echo "===== package/turboacc tree ====="
               find package/turboacc -maxdepth 6 -type f | sort || true
-              echo "===== tmp package index turboacc search ====="
               grep -R "luci-app-turboacc" tmp 2>/dev/null | head -200 || true
               exit 1
             fi
@@ -235,6 +229,31 @@ jobs:
 
             if grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_DRV=y' .config; then
               echo "ERROR: Shortcut-FE ECM/DRV must be disabled in Turbo ACC no-SFE build"
+              exit 1
+            fi
+
+            if ! grep -q '^CONFIG_PACKAGE_kmod-fs-f2fs=y' .config; then
+              echo "ERROR: kmod-fs-f2fs not selected"
+              exit 1
+            fi
+
+            if ! grep -q '^CONFIG_PACKAGE_f2fs-tools=y' .config; then
+              echo "ERROR: f2fs-tools not selected"
+              exit 1
+            fi
+
+            if ! grep -q '^CONFIG_PACKAGE_f2fsck=y' .config; then
+              echo "ERROR: f2fsck not selected"
+              exit 1
+            fi
+
+            if ! grep -q '^CONFIG_PACKAGE_mkf2fs=y' .config; then
+              echo "ERROR: mkf2fs not selected"
+              exit 1
+            fi
+
+            if ! grep -q '^CONFIG_PACKAGE_libf2fs6=y' .config; then
+              echo "ERROR: libf2fs6 not selected"
               exit 1
             fi
 
@@ -316,6 +335,13 @@ jobs:
             test -f package/turboacc/luci-app-turboacc/Makefile
             test -f package/turboacc/nft-fullcone/Makefile
 
+            echo "===== Required F2FS packages for /dev/fitrw overlay ====="
+            grep -q '^CONFIG_PACKAGE_kmod-fs-f2fs=y' .config
+            grep -q '^CONFIG_PACKAGE_f2fs-tools=y' .config
+            grep -q '^CONFIG_PACKAGE_f2fsck=y' .config
+            grep -q '^CONFIG_PACKAGE_mkf2fs=y' .config
+            grep -q '^CONFIG_PACKAGE_libf2fs6=y' .config
+
             echo "===== Ensure EQOS Plus disabled ====="
             ! grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-ifb=y' .config
@@ -326,7 +352,7 @@ jobs:
             echo "nftables-json is allowed because it can be selected by firewall4/base system."
 
             echo "===== Required fixed minimal DiskMan package ====="
-            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|lsblk|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils)' .config || true
+            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|lsblk|e2fsprogs|f2fs-tools|f2fsck|mkf2fs|libf2fs6|smartmontools|kmod-fs-ext4|kmod-fs-f2fs|mount-utils)' .config || true
 
             require_config() {
               local key="$1"
@@ -365,6 +391,11 @@ jobs:
             require_config CONFIG_PACKAGE_lsblk
             require_config CONFIG_PACKAGE_e2fsprogs
             require_config CONFIG_PACKAGE_kmod-fs-ext4
+            require_config CONFIG_PACKAGE_kmod-fs-f2fs
+            require_config CONFIG_PACKAGE_f2fs-tools
+            require_config CONFIG_PACKAGE_f2fsck
+            require_config CONFIG_PACKAGE_mkf2fs
+            require_config CONFIG_PACKAGE_libf2fs6
             require_config CONFIG_PACKAGE_mount-utils
             require_config CONFIG_PACKAGE_smartmontools
 
@@ -542,6 +573,12 @@ jobs:
               exit 1
             fi
 
+            if ! grep -Eq '^(kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs|libf2fs6)([[:space:]-]|$)' "$manifest"; then
+              echo "ERROR: F2FS required packages not found in manifest"
+              grep -Ei 'f2fs|mkf2fs|libf2fs6' "$manifest" || true
+              exit 1
+            fi
+
             if grep -Eiq '^(kmod-fast-classifier|kmod-shortcut-fe|kmod-shortcut-fe-cm|kmod-shortcut-fe-drv)([[:space:]-]|$)' "$manifest"; then
               echo "ERROR: Shortcut-FE related package found in no-SFE manifest:"
               grep -Ei '^(kmod-fast-classifier|kmod-shortcut-fe|kmod-shortcut-fe-cm|kmod-shortcut-fe-drv)([[:space:]-]|$)' "$manifest" || true
@@ -551,7 +588,7 @@ jobs:
             echo "===== Note ====="
             echo "nftables-json is allowed and is not treated as EQOS residue."
 
-            forbidden='^(btrfs-progs|kmod-fs-btrfs|kmod-fs-exfat|kmod-fs-msdos|kmod-fs-ntfs3|kmod-fs-vfat|dosfstools|exfat-fsck|exfat-mkfs|f2fsck|mkf2fs|libf2fs6|ntfs-3g-utils|kmod-usb-storage|kmod-usb-storage-uas|block-mount)([[:space:]-]|$)'
+            forbidden='^(btrfs-progs|kmod-fs-btrfs|kmod-fs-exfat|kmod-fs-msdos|kmod-fs-ntfs3|kmod-fs-vfat|dosfstools|exfat-fsck|exfat-mkfs|ntfs-3g-utils|kmod-usb-storage|kmod-usb-storage-uas|block-mount)([[:space:]-]|$)'
 
             if grep -Eq "$forbidden" "$manifest"; then
               echo "::warning::forbidden-like packages found in firmware manifest:"
@@ -605,10 +642,10 @@ jobs:
 
             {
               echo "===== grep important packages from .config ====="
-              grep -E 'CONFIG_PACKAGE_(luci|rpcd|diskman|openlist|lucky|turboacc|fullcone|offload|bbr|shortcut|fast-classifier|eqos|ifb|tc-tiny|nftables-json|bc|ttyd|argon|parted|lsblk|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils)' .config || true
+              grep -E 'CONFIG_PACKAGE_(luci|rpcd|diskman|openlist|lucky|turboacc|fullcone|offload|bbr|shortcut|fast-classifier|eqos|ifb|tc-tiny|nftables-json|bc|ttyd|argon|parted|lsblk|e2fsprogs|f2fs-tools|f2fsck|mkf2fs|libf2fs6|smartmontools|kmod-fs-ext4|kmod-fs-f2fs|mount-utils)' .config || true
               echo
               echo "===== grep important packages from tmp/.packageinfo ====="
-              grep -nE 'Package: (luci-app-diskman|luci-i18n-diskman|luci-app-lucky|lucky|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|rpcd-mod-file|luci-base|kmod-fs-ext4|mount-utils)|Depends:|Source-Makefile:.*(diskman|lucky|turboacc|fullcone|eqos)' tmp/.packageinfo 2>/dev/null || true
+              grep -nE 'Package: (luci-app-diskman|luci-i18n-diskman|luci-app-lucky|lucky|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|rpcd-mod-file|luci-base|kmod-fs-ext4|kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs|libf2fs6|mount-utils)|Depends:|Source-Makefile:.*(diskman|lucky|turboacc|fullcone|eqos|f2fs)' tmp/.packageinfo 2>/dev/null || true
             } > "$GITHUB_WORKSPACE/diagnostics/openwrt/package/important_package_grep.txt" 2>&1
 
             {
@@ -695,7 +732,7 @@ jobs:
       - name: Generate release tag
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
         run: |
-          echo "RELEASE_TAG=OpenWrt_F50_Lucky_TurboACC_NoSFE_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_F50_Lucky_TurboACC_NoSFE_F2FS_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
@@ -704,7 +741,7 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           body: |
-            RAX3000M F50 build with Lucky and Turbo ACC no-SFE.
+            RAX3000M F50 build with Lucky, Turbo ACC no-SFE and F2FS /dev/fitrw support.
 
             Purpose:
             - Keep Lucky installed.
@@ -712,6 +749,7 @@ jobs:
             - Add Turbo ACC in no-SFE stable mode.
             - Enable Flow Offload, Hardware Flow Offload, FullCone NAT and BBR.
             - Keep Shortcut-FE disabled for first stability test.
+            - Add F2FS tools required for /dev/fitrw persistent overlay.
 
             Included:
             - F50 basic USB Ethernet drivers
@@ -722,7 +760,13 @@ jobs:
             - OpenList
             - patched minimal DiskMan LuCI package
             - DiskMan Lua LuCI runtime dependencies
-            - ext4 support for existing /dev/fitrw persistent overlay
+            - ext4 support
+            - F2FS support for existing /dev/fitrw persistent overlay
+            - kmod-fs-f2fs
+            - f2fs-tools
+            - mkf2fs
+            - f2fsck
+            - libf2fs6
             - lucky
             - luci-app-lucky
             - uci-defaults/03-disable-lucky-autostart
@@ -737,6 +781,7 @@ jobs:
             - Lucky is installed but disabled from boot.
             - Turbo ACC is installed in no-SFE mode.
             - Shortcut-FE / SFE is intentionally disabled for this stability build.
+            - F2FS tools are included to avoid mkfs.f2fs missing during /dev/fitrw overlay initialization.
             - Full diagnostics are uploaded as a workflow artifact.
             - Manifest package warnings do not block artifact upload by default.
             - STRICT_MANIFEST_CHECK=false by default.
@@ -755,7 +800,7 @@ jobs:
             - dark-line CSS patch
             - USB storage / UAS
             - block-mount
-            - btrfs/exfat/f2fs/ntfs tools and kmods
+            - btrfs/exfat/ntfs tools and kmods
             - QMI / MBIM / usb-modeswitch / USB serial
             - manual extroot scripts
             - OpenClash
