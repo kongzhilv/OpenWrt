@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky P1A-2 NoAutostart
+name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky TurboACC NoSFE
 
 on:
   workflow_dispatch:
@@ -29,7 +29,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-p1a2-lucky-installed-autostart-disabled
+    name: build-f50-lucky-turboacc-nosfe
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
@@ -161,11 +161,14 @@ jobs:
             grep -R "luci-app-diskman" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
             grep -R "luci-i18n-diskman" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
             grep -R "luci-app-lucky" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
+            grep -R "luci-app-turboacc" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
+            grep -R "nft-fullcone" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
+            grep -R "shortcut-fe" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
             grep -R "luci-app-eqosplus" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
 
             echo "===== Check important packages in final .config ====="
-            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc)' .config || true
-            grep -E '^# CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc)' .config || true
+            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|shortcut-fe|fast-classifier)' .config || true
+            grep -E '^# CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-turboacc|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|shortcut-fe|fast-classifier)' .config || true
 
             if ! grep -q '^CONFIG_PACKAGE_luci-app-diskman=y' .config; then
               echo "ERROR: luci-app-diskman still not selected after package metadata refresh"
@@ -196,21 +199,60 @@ jobs:
               exit 1
             fi
 
-            echo "===== Ensure EQOS Plus is disabled in P1A-2 ====="
+            if ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc=y' .config; then
+              echo "ERROR: luci-app-turboacc not selected"
+              echo "===== package/turboacc tree ====="
+              find package/turboacc -maxdepth 6 -type f | sort || true
+              echo "===== tmp package index turboacc search ====="
+              grep -R "luci-app-turboacc" tmp 2>/dev/null | head -200 || true
+              exit 1
+            fi
+
+            if ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING=y' .config; then
+              echo "ERROR: Turbo ACC Flow Offload option not selected"
+              exit 1
+            fi
+
+            if ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_BBR_CCA=y' .config; then
+              echo "ERROR: Turbo ACC BBR option not selected"
+              exit 1
+            fi
+
+            if ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_NFT_FULLCONE=y' .config; then
+              echo "ERROR: Turbo ACC NFT FullCone option not selected"
+              exit 1
+            fi
+
+            if grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE=y' .config; then
+              echo "ERROR: Shortcut-FE must be disabled in Turbo ACC no-SFE build"
+              exit 1
+            fi
+
+            if grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_CM=y' .config; then
+              echo "ERROR: Shortcut-FE CM must be disabled in Turbo ACC no-SFE build"
+              exit 1
+            fi
+
+            if grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_DRV=y' .config; then
+              echo "ERROR: Shortcut-FE ECM/DRV must be disabled in Turbo ACC no-SFE build"
+              exit 1
+            fi
+
+            echo "===== Ensure EQOS Plus is disabled ====="
             if grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config; then
-              echo "ERROR: luci-app-eqosplus must be disabled in P1A-2"
+              echo "ERROR: luci-app-eqosplus must be disabled"
               exit 1
             fi
             if grep -q '^CONFIG_PACKAGE_kmod-ifb=y' .config; then
-              echo "ERROR: kmod-ifb must be disabled in P1A-2"
+              echo "ERROR: kmod-ifb must be disabled"
               exit 1
             fi
             if grep -q '^CONFIG_PACKAGE_tc-tiny=y' .config; then
-              echo "ERROR: tc-tiny must be disabled in P1A-2"
+              echo "ERROR: tc-tiny must be disabled"
               exit 1
             fi
             if grep -q '^CONFIG_PACKAGE_bc=y' .config; then
-              echo "ERROR: bc must be disabled in P1A-2"
+              echo "ERROR: bc must be disabled"
               exit 1
             fi
 
@@ -255,21 +297,36 @@ jobs:
             grep -q '^CONFIG_PACKAGE_luci-app-openlist=y' .config
             grep -q '^CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y' .config
 
-            echo "===== Required stage P1A-2 Lucky packages ====="
+            echo "===== Required Lucky packages ====="
             grep -q '^CONFIG_PACKAGE_lucky=y' .config
             grep -q '^CONFIG_PACKAGE_luci-app-lucky=y' .config
 
-            echo "===== Ensure EQOS Plus disabled in P1A-2 ====="
+            echo "===== Required Turbo ACC no-SFE packages ====="
+            grep -q '^CONFIG_PACKAGE_luci-app-turboacc=y' .config
+            grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING=y' .config
+            grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_BBR_CCA=y' .config
+            grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_NFT_FULLCONE=y' .config
+            grep -q '^CONFIG_PACKAGE_kmod-nft-offload=y' .config
+            grep -q '^CONFIG_PACKAGE_kmod-tcp-bbr=y' .config
+            grep -q '^CONFIG_PACKAGE_kmod-nft-fullcone=y' .config
+            ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE=y' .config
+            ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_CM=y' .config
+            ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_DRV=y' .config
+            test -d package/turboacc
+            test -f package/turboacc/luci-app-turboacc/Makefile
+            test -f package/turboacc/nft-fullcone/Makefile
+
+            echo "===== Ensure EQOS Plus disabled ====="
             ! grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config
             ! grep -q '^CONFIG_PACKAGE_kmod-ifb=y' .config
             ! grep -q '^CONFIG_PACKAGE_tc-tiny=y' .config
             ! grep -q '^CONFIG_PACKAGE_bc=y' .config
 
             echo "===== Note ====="
-            echo "nftables-json is allowed in P1A-2 because it can be selected by firewall4/base system."
+            echo "nftables-json is allowed because it can be selected by firewall4/base system."
 
             echo "===== Required fixed minimal DiskMan package ====="
-            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|fdisk|blkid|lsblk|partx-utils|losetup|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils)' .config || true
+            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|lsblk|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils)' .config || true
 
             require_config() {
               local key="$1"
@@ -286,6 +343,7 @@ jobs:
 
             test -d package/luci-app-diskman
             test -d package/lucky
+            test -d package/turboacc
             test ! -d package/luci-app-eqosplus
 
             require_config CONFIG_PACKAGE_luci-app-diskman
@@ -312,6 +370,11 @@ jobs:
 
             require_config CONFIG_PACKAGE_lucky
             require_config CONFIG_PACKAGE_luci-app-lucky
+
+            require_config CONFIG_PACKAGE_luci-app-turboacc
+            require_config CONFIG_PACKAGE_kmod-nft-offload
+            require_config CONFIG_PACKAGE_kmod-tcp-bbr
+            require_config CONFIG_PACKAGE_kmod-nft-fullcone
 
             echo "===== Required ttyd packages ====="
             grep -q '^CONFIG_PACKAGE_ttyd=y' .config
@@ -345,8 +408,9 @@ jobs:
             test -f files/etc/uci-defaults/01-enable-wifi
             test -f files/etc/uci-defaults/02-set-argon-theme
             test -f files/etc/uci-defaults/03-disable-lucky-autostart
+            test -f files/etc/uci-defaults/04-config-turboacc
 
-            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme|files/etc/uci-defaults/03-disable-lucky-autostart)$' || true)"
+            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme|files/etc/uci-defaults/03-disable-lucky-autostart|files/etc/uci-defaults/04-config-turboacc)$' || true)"
             if [ -n "$bad_files" ]; then
               echo "ERROR: unexpected embedded files:"
               echo "$bad_files"
@@ -440,22 +504,52 @@ jobs:
             echo "manifest=$manifest"
 
             echo "===== suspicious packages in manifest ====="
-            grep -Ei 'diskman|lucky|eqos|ifb|nftables|tc-tiny|rpcd-mod-file|btrfs|exfat|f2fs|ntfs|dosfstools|kmod-fs|usb-storage|block-mount|mount-utils' "$manifest" || true
+            grep -Ei 'diskman|lucky|turboacc|fullcone|offload|bbr|shortcut|fast-classifier|eqos|ifb|nftables|tc-tiny|rpcd-mod-file|btrfs|exfat|f2fs|ntfs|dosfstools|kmod-fs|usb-storage|block-mount|mount-utils' "$manifest" || true
 
             if grep -Eq '^(luci-app-eqosplus|kmod-ifb|tc-tiny|bc)([[:space:]-]|$)' "$manifest"; then
-              echo "ERROR: EQOS Plus related package found in P1A-2 manifest:"
+              echo "ERROR: EQOS Plus related package found in manifest:"
               grep -E '^(luci-app-eqosplus|kmod-ifb|tc-tiny|bc)([[:space:]-]|$)' "$manifest" || true
               exit 1
             fi
 
             if ! grep -Eq '^(lucky|luci-app-lucky)([[:space:]-]|$)' "$manifest"; then
-              echo "ERROR: lucky packages not found in P1A-2 manifest"
+              echo "ERROR: lucky packages not found in manifest"
               grep -Ei 'lucky' "$manifest" || true
               exit 1
             fi
 
+            if ! grep -Eq '^(luci-app-turboacc)([[:space:]-]|$)' "$manifest"; then
+              echo "ERROR: luci-app-turboacc not found in manifest"
+              grep -Ei 'turboacc' "$manifest" || true
+              exit 1
+            fi
+
+            if ! grep -Eq '^(kmod-nft-offload)([[:space:]-]|$)' "$manifest"; then
+              echo "ERROR: kmod-nft-offload not found in manifest"
+              grep -Ei 'offload' "$manifest" || true
+              exit 1
+            fi
+
+            if ! grep -Eq '^(kmod-tcp-bbr)([[:space:]-]|$)' "$manifest"; then
+              echo "ERROR: kmod-tcp-bbr not found in manifest"
+              grep -Ei 'bbr' "$manifest" || true
+              exit 1
+            fi
+
+            if ! grep -Eq '^(kmod-nft-fullcone)([[:space:]-]|$)' "$manifest"; then
+              echo "ERROR: kmod-nft-fullcone not found in manifest"
+              grep -Ei 'fullcone' "$manifest" || true
+              exit 1
+            fi
+
+            if grep -Eiq '^(kmod-fast-classifier|kmod-shortcut-fe|kmod-shortcut-fe-cm|kmod-shortcut-fe-drv)([[:space:]-]|$)' "$manifest"; then
+              echo "ERROR: Shortcut-FE related package found in no-SFE manifest:"
+              grep -Ei '^(kmod-fast-classifier|kmod-shortcut-fe|kmod-shortcut-fe-cm|kmod-shortcut-fe-drv)([[:space:]-]|$)' "$manifest" || true
+              exit 1
+            fi
+
             echo "===== Note ====="
-            echo "nftables-json is allowed in P1A-2 and is not treated as EQOS residue."
+            echo "nftables-json is allowed and is not treated as EQOS residue."
 
             forbidden='^(btrfs-progs|kmod-fs-btrfs|kmod-fs-exfat|kmod-fs-msdos|kmod-fs-ntfs3|kmod-fs-vfat|dosfstools|exfat-fsck|exfat-mkfs|f2fsck|mkf2fs|libf2fs6|ntfs-3g-utils|kmod-usb-storage|kmod-usb-storage-uas|block-mount)([[:space:]-]|$)'
 
@@ -511,10 +605,10 @@ jobs:
 
             {
               echo "===== grep important packages from .config ====="
-              grep -E 'CONFIG_PACKAGE_(luci|rpcd|diskman|openlist|lucky|eqos|ifb|tc-tiny|nftables-json|bc|ttyd|argon|parted|lsblk|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils)' .config || true
+              grep -E 'CONFIG_PACKAGE_(luci|rpcd|diskman|openlist|lucky|turboacc|fullcone|offload|bbr|shortcut|fast-classifier|eqos|ifb|tc-tiny|nftables-json|bc|ttyd|argon|parted|lsblk|e2fsprogs|smartmontools|kmod-fs-ext4|mount-utils)' .config || true
               echo
               echo "===== grep important packages from tmp/.packageinfo ====="
-              grep -nE 'Package: (luci-app-diskman|luci-i18n-diskman|luci-app-lucky|lucky|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|rpcd-mod-file|luci-base|kmod-fs-ext4|mount-utils)|Depends:|Source-Makefile:.*(diskman|lucky|eqos)' tmp/.packageinfo 2>/dev/null || true
+              grep -nE 'Package: (luci-app-diskman|luci-i18n-diskman|luci-app-lucky|lucky|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|rpcd-mod-file|luci-base|kmod-fs-ext4|mount-utils)|Depends:|Source-Makefile:.*(diskman|lucky|turboacc|fullcone|eqos)' tmp/.packageinfo 2>/dev/null || true
             } > "$GITHUB_WORKSPACE/diagnostics/openwrt/package/important_package_grep.txt" 2>&1
 
             {
@@ -522,9 +616,13 @@ jobs:
               find package/luci-theme-argon -maxdepth 6 -type f | sort || true
               find package/luci-app-diskman -maxdepth 6 -type f | sort || true
               find package/lucky -maxdepth 6 -type f | sort || true
+              find package/turboacc -maxdepth 6 -type f | sort || true
               echo
               echo "===== Ensure no EQOS package directory ====="
               find package -maxdepth 3 -iname '*eqos*' -print || true
+              echo
+              echo "===== Ensure no Shortcut-FE package directory in no-SFE build ====="
+              find package/turboacc -maxdepth 4 -iname '*shortcut*' -print || true
               echo
               echo "===== Argon Makefile ====="
               sed -n '1,220p' package/luci-theme-argon/Makefile 2>/dev/null || true
@@ -535,6 +633,10 @@ jobs:
               echo "===== Lucky Makefiles ====="
               sed -n '1,220p' package/lucky/luci-app-lucky/Makefile 2>/dev/null || true
               sed -n '1,260p' package/lucky/lucky/Makefile 2>/dev/null || true
+              echo
+              echo "===== Turbo ACC Makefiles ====="
+              sed -n '1,260p' package/turboacc/luci-app-turboacc/Makefile 2>/dev/null || true
+              sed -n '1,260p' package/turboacc/nft-fullcone/Makefile 2>/dev/null || true
               echo
               echo "===== Embedded uci-defaults files ====="
               find files/etc/uci-defaults -maxdepth 1 -type f -print -exec sed -n '1,280p' {} \; 2>/dev/null || true
@@ -593,7 +695,7 @@ jobs:
       - name: Generate release tag
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
         run: |
-          echo "RELEASE_TAG=OpenWrt_F50_P1A2_LuckyInstalled_AutostartDisabled_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_F50_Lucky_TurboACC_NoSFE_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
@@ -602,12 +704,14 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           body: |
-            RAX3000M F50 stage P1A-2 build.
+            RAX3000M F50 build with Lucky and Turbo ACC no-SFE.
 
             Purpose:
             - Keep Lucky installed.
             - Disable Lucky autostart by uci-defaults.
-            - Test whether F50 hardboot issue is caused by Lucky running at boot or merely by Lucky being present in rootfs.
+            - Add Turbo ACC in no-SFE stable mode.
+            - Enable Flow Offload, Hardware Flow Offload, FullCone NAT and BBR.
+            - Keep Shortcut-FE disabled for first stability test.
 
             Included:
             - F50 basic USB Ethernet drivers
@@ -622,9 +726,17 @@ jobs:
             - lucky
             - luci-app-lucky
             - uci-defaults/03-disable-lucky-autostart
+            - Turbo ACC no-SFE
+            - Flow Offload
+            - Hardware Flow Offload
+            - FullCone NAT
+            - BBR CCA
+            - uci-defaults/04-config-turboacc
 
             Notes:
             - Lucky is installed but disabled from boot.
+            - Turbo ACC is installed in no-SFE mode.
+            - Shortcut-FE / SFE is intentionally disabled for this stability build.
             - Full diagnostics are uploaded as a workflow artifact.
             - Manifest package warnings do not block artifact upload by default.
             - STRICT_MANIFEST_CHECK=false by default.
@@ -648,7 +760,7 @@ jobs:
             - manual extroot scripts
             - OpenClash
             - Docker
-            - Turbo ACC
+            - Shortcut-FE / SFE
           files: release-files/*
           draft: false
           prerelease: false
