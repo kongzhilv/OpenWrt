@@ -170,8 +170,8 @@ jobs:
             grep -R "luci-app-eqosplus" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
 
             echo "===== Check important packages in final .config ====="
-            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone|kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs|libf2fs6|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|shortcut-fe|fast-classifier)' .config || true
-            grep -E '^# CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-turboacc|kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs|libf2fs6|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|shortcut-fe|fast-classifier)' .config || true
+            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone|kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|shortcut-fe|fast-classifier)' .config || true
+            grep -E '^# CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-turboacc|kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|shortcut-fe|fast-classifier)' .config || true
 
             if ! grep -q '^CONFIG_PACKAGE_luci-app-diskman=y' .config; then
               echo "ERROR: luci-app-diskman still not selected after package metadata refresh"
@@ -249,11 +249,6 @@ jobs:
 
             if ! grep -q '^CONFIG_PACKAGE_mkf2fs=y' .config; then
               echo "ERROR: mkf2fs not selected"
-              exit 1
-            fi
-
-            if ! grep -q '^CONFIG_PACKAGE_libf2fs6=y' .config; then
-              echo "ERROR: libf2fs6 not selected"
               exit 1
             fi
 
@@ -340,7 +335,6 @@ jobs:
             grep -q '^CONFIG_PACKAGE_f2fs-tools=y' .config
             grep -q '^CONFIG_PACKAGE_f2fsck=y' .config
             grep -q '^CONFIG_PACKAGE_mkf2fs=y' .config
-            grep -q '^CONFIG_PACKAGE_libf2fs6=y' .config
 
             echo "===== Ensure EQOS Plus disabled ====="
             ! grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config
@@ -352,7 +346,7 @@ jobs:
             echo "nftables-json is allowed because it can be selected by firewall4/base system."
 
             echo "===== Required fixed minimal DiskMan package ====="
-            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|lsblk|e2fsprogs|f2fs-tools|f2fsck|mkf2fs|libf2fs6|smartmontools|kmod-fs-ext4|kmod-fs-f2fs|mount-utils)' .config || true
+            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|lsblk|e2fsprogs|f2fs-tools|f2fsck|mkf2fs|smartmontools|kmod-fs-ext4|kmod-fs-f2fs|mount-utils)' .config || true
 
             require_config() {
               local key="$1"
@@ -395,7 +389,6 @@ jobs:
             require_config CONFIG_PACKAGE_f2fs-tools
             require_config CONFIG_PACKAGE_f2fsck
             require_config CONFIG_PACKAGE_mkf2fs
-            require_config CONFIG_PACKAGE_libf2fs6
             require_config CONFIG_PACKAGE_mount-utils
             require_config CONFIG_PACKAGE_smartmontools
 
@@ -573,9 +566,27 @@ jobs:
               exit 1
             fi
 
-            if ! grep -Eq '^(kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs|libf2fs6)([[:space:]-]|$)' "$manifest"; then
-              echo "ERROR: F2FS required packages not found in manifest"
-              grep -Ei 'f2fs|mkf2fs|libf2fs6' "$manifest" || true
+            if ! grep -Eq '^(kmod-fs-f2fs)([[:space:]-]|$)' "$manifest"; then
+              echo "ERROR: kmod-fs-f2fs not found in manifest"
+              grep -Ei 'f2fs' "$manifest" || true
+              exit 1
+            fi
+
+            if ! grep -Eq '^(f2fs-tools)([[:space:]-]|$)' "$manifest"; then
+              echo "ERROR: f2fs-tools not found in manifest"
+              grep -Ei 'f2fs' "$manifest" || true
+              exit 1
+            fi
+
+            if ! grep -Eq '^(f2fsck)([[:space:]-]|$)' "$manifest"; then
+              echo "ERROR: f2fsck not found in manifest"
+              grep -Ei 'f2fs' "$manifest" || true
+              exit 1
+            fi
+
+            if ! grep -Eq '^(mkf2fs)([[:space:]-]|$)' "$manifest"; then
+              echo "ERROR: mkf2fs not found in manifest"
+              grep -Ei 'mkf2fs|f2fs' "$manifest" || true
               exit 1
             fi
 
@@ -766,7 +777,6 @@ jobs:
             - f2fs-tools
             - mkf2fs
             - f2fsck
-            - libf2fs6
             - lucky
             - luci-app-lucky
             - uci-defaults/03-disable-lucky-autostart
@@ -782,6 +792,7 @@ jobs:
             - Turbo ACC is installed in no-SFE mode.
             - Shortcut-FE / SFE is intentionally disabled for this stability build.
             - F2FS tools are included to avoid mkfs.f2fs missing during /dev/fitrw overlay initialization.
+            - libf2fs6 is dependency-provided by f2fs-tools / mkf2fs / f2fsck and is not forced as a direct .config validation item.
             - Full diagnostics are uploaded as a workflow artifact.
             - Manifest package warnings do not block artifact upload by default.
             - STRICT_MANIFEST_CHECK=false by default.
