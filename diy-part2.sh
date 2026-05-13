@@ -265,7 +265,6 @@ CONFIG_PACKAGE_kmod-fs-f2fs=y
 CONFIG_PACKAGE_f2fs-tools=y
 CONFIG_PACKAGE_f2fsck=y
 CONFIG_PACKAGE_mkf2fs=y
-CONFIG_PACKAGE_libf2fs6=y
 
 CONFIG_PACKAGE_mount-utils=y
 CONFIG_PACKAGE_smartmontools=y
@@ -378,7 +377,6 @@ uci show wireless 2>/dev/null | grep -q '=wifi-device' || {
     exit 1
 }
 
-# 启用 radio，并设置基础参数
 for dev in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-device/\1/p"); do
     uci -q set "${dev}.disabled=0"
 
@@ -417,7 +415,6 @@ for iface in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-iface/\1/
     dev="$(uci -q get "${iface}.device" || true)"
     band="$(uci -q get "wireless.${dev}.band" || true)"
 
-    # 强制分频命名：不管保留配置里原来是什么 SSID，都改成两个名字
     if [ "$band" = "2g" ]; then
         uci -q set "${iface}.ssid=OpenWrt_2G"
     elif [ "$band" = "5g" ]; then
@@ -430,8 +427,6 @@ for iface in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-iface/\1/
         uci -q set "${iface}.ssid=OpenWrt_WiFi_$i"
     fi
 
-    # 密码和加密方式不强制删除。
-    # 没有 encryption 才默认设为无密码。
     if [ -z "$(uci -q get "${iface}.encryption" 2>/dev/null)" ]; then
         uci -q set "${iface}.encryption=none"
     fi
@@ -487,7 +482,6 @@ cat > files/etc/uci-defaults/04-config-turboacc <<'EOF_TURBOACC'
 
 logger -t config-turboacc "configure Turbo ACC no-SFE stable mode"
 
-# Turbo ACC options
 uci -q set turboacc.config.sw_flow='1'
 uci -q set turboacc.config.hw_flow='1'
 uci -q set turboacc.config.sfe_flow='0'
@@ -497,7 +491,6 @@ uci -q set turboacc.config.hw_wed='0'
 uci -q set turboacc.config.bbr_cca='1'
 uci -q commit turboacc
 
-# firewall4 flow offloading
 uci -q set firewall.@defaults[0].flow_offloading='1'
 uci -q set firewall.@defaults[0].flow_offloading_hw='1'
 uci -q commit firewall
