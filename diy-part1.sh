@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part1: add Argon, Lucky and Turbo ACC no-SFE ====="
+echo "===== DIY part1: add Argon, Lucky, Turbo ACC no-SFE and EQOS Plus ====="
 
 echo "===== Remove known conflicting third-party feed leftovers from feeds.conf.default ====="
 if [ -f feeds.conf.default ]; then
@@ -78,11 +78,20 @@ if find package/turboacc -maxdepth 3 -type d -iname '*shortcut*' | grep -q .; th
     exit 1
 fi
 
-echo "===== EQOS Plus is intentionally not cloned ====="
+echo "===== Add EQOS Plus source ====="
+rm -rf package/luci-app-eqosplus
+git clone --depth 1 https://github.com/sirpdboy/luci-app-eqosplus.git package/luci-app-eqosplus
+
+if [ ! -f package/luci-app-eqosplus/Makefile ]; then
+    echo "ERROR: luci-app-eqosplus Makefile missing"
+    find package/luci-app-eqosplus -maxdepth 4 -type f -name Makefile -print || true
+    exit 1
+fi
 
 echo "===== DIY part1 package tree check ====="
 find package/luci-theme-argon -maxdepth 3 -type f -name Makefile -print || true
 find package/lucky -maxdepth 3 -type f -name Makefile -print || true
 find package/turboacc -maxdepth 4 -type f -name Makefile -print || true
+find package/luci-app-eqosplus -maxdepth 4 -type f -name Makefile -print || true
 
 echo "===== DIY part1 done ====="
