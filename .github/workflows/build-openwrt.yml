@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky TurboACC NoSFE F2FS
+name: Build OpenWrt F50 WiFi SFTP ttyd Argon OpenList DiskMan Lucky TurboACC NoSFE F2FS Monitor EQOS Temp
 
 on:
   workflow_dispatch:
@@ -29,7 +29,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-lucky-turboacc-nosfe-f2fs
+    name: build-f50-monitor-eqos-temp
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
@@ -54,32 +54,20 @@ jobs:
             test -f "$DIY_P2_SH"
           } 2>&1 | tee logs/00_check_required_files.log
 
-      - name: Prepare folders
-        run: |
-          {
-            echo "===== Prepare folders ====="
-            date
-            mkdir -p logs release-files diagnostics
-            df -h
-          } 2>&1 | tee logs/01_prepare_folders.log
-
       - name: Free disk space
         timeout-minutes: 15
         run: |
           {
             echo "===== Free disk space ====="
             date
-
             sudo rm -rf /usr/share/dotnet || true
             sudo rm -rf /usr/local/lib/android || true
             sudo rm -rf /opt/ghc || true
             sudo rm -rf /opt/hostedtoolcache/CodeQL || true
-
             docker image prune --all --force || true
-
             sudo timedatectl set-timezone "$TZ" || true
             df -h
-          } 2>&1 | tee logs/02_free_disk.log
+          } 2>&1 | tee logs/01_free_disk.log
 
       - name: Install build dependencies
         timeout-minutes: 60
@@ -87,15 +75,13 @@ jobs:
           {
             echo "===== Install build dependencies ====="
             date
-
             sudo apt-get update
             sudo apt-get -y install \
               build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
               gettext git libncurses-dev libssl-dev python3-setuptools rsync unzip \
               zlib1g-dev file wget curl swig python3-dev qemu-utils libfuse-dev
-
             df -h
-          } 2>&1 | tee logs/03_install_deps.log
+          } 2>&1 | tee logs/02_install_deps.log
 
       - name: Clone OpenWrt source
         run: |
@@ -106,7 +92,7 @@ jobs:
             cd openwrt
             git log -1 --oneline
             git status --short
-          } 2>&1 | tee logs/04_clone_source.log
+          } 2>&1 | tee logs/03_clone_source.log
 
       - name: DIY part 1
         run: |
@@ -116,7 +102,7 @@ jobs:
             chmod +x "$DIY_P1_SH"
             cd openwrt
             "$GITHUB_WORKSPACE/$DIY_P1_SH"
-          } 2>&1 | tee logs/05_diy_part1.log
+          } 2>&1 | tee logs/04_diy_part1.log
 
       - name: Update feeds
         run: |
@@ -125,7 +111,7 @@ jobs:
             date
             cd openwrt
             ./scripts/feeds update -a
-          } 2>&1 | tee logs/06_feeds_update.log
+          } 2>&1 | tee logs/05_feeds_update.log
 
       - name: Install feeds
         run: |
@@ -134,7 +120,7 @@ jobs:
             date
             cd openwrt
             ./scripts/feeds install -a
-          } 2>&1 | tee logs/07_feeds_install.log
+          } 2>&1 | tee logs/06_feeds_install.log
 
       - name: DIY part 2 and defconfig
         run: |
@@ -155,216 +141,58 @@ jobs:
             make defconfig V=s
 
             echo "===== Save final config ====="
-            cp -f .config "$GITHUB_WORKSPACE/logs/08_final.config"
-
-            echo "===== Check important packages in generated package index ====="
-            grep -R "luci-app-diskman" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
-            grep -R "luci-i18n-diskman" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
-            grep -R "luci-app-lucky" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
-            grep -R "luci-app-turboacc" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
-            grep -R "nft-fullcone" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
-            grep -R "shortcut-fe" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
-            grep -R "f2fs" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
-            grep -R "mkf2fs" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
-            grep -R "libf2fs6" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
-            grep -R "luci-app-eqosplus" tmp/.packageinfo tmp/.config-package.in tmp/.config-package.in.* 2>/dev/null || true
+            cp -f .config "$GITHUB_WORKSPACE/logs/07_final.config"
 
             echo "===== Check important packages in final .config ====="
-            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone|kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|shortcut-fe|fast-classifier)' .config || true
-            grep -E '^# CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-turboacc|kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|shortcut-fe|fast-classifier)' .config || true
-
-            if ! grep -q '^CONFIG_PACKAGE_luci-app-diskman=y' .config; then
-              echo "ERROR: luci-app-diskman still not selected after package metadata refresh"
-              find package/luci-app-diskman -maxdepth 5 -type f | sort || true
-              sed -n '1,220p' package/luci-app-diskman/Makefile || true
-              grep -R "diskman" tmp 2>/dev/null | head -200 || true
-              exit 1
-            fi
-
-            if ! grep -q '^CONFIG_PACKAGE_luci-app-lucky=y' .config; then
-              echo "ERROR: luci-app-lucky not selected"
-              find package/lucky -maxdepth 5 -type f | sort || true
-              grep -R "luci-app-lucky" tmp 2>/dev/null | head -200 || true
-              exit 1
-            fi
-
-            if ! grep -q '^CONFIG_PACKAGE_lucky=y' .config; then
-              echo "ERROR: lucky core package not selected"
-              find package/lucky -maxdepth 5 -type f | sort || true
-              grep -R "Package: lucky" tmp/.packageinfo 2>/dev/null || true
-              exit 1
-            fi
-
-            if ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc=y' .config; then
-              echo "ERROR: luci-app-turboacc not selected"
-              find package/turboacc -maxdepth 6 -type f | sort || true
-              grep -R "luci-app-turboacc" tmp 2>/dev/null | head -200 || true
-              exit 1
-            fi
-
-            if ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING=y' .config; then
-              echo "ERROR: Turbo ACC Flow Offload option not selected"
-              exit 1
-            fi
-
-            if ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_BBR_CCA=y' .config; then
-              echo "ERROR: Turbo ACC BBR option not selected"
-              exit 1
-            fi
-
-            if ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_NFT_FULLCONE=y' .config; then
-              echo "ERROR: Turbo ACC NFT FullCone option not selected"
-              exit 1
-            fi
-
-            if grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE=y' .config; then
-              echo "ERROR: Shortcut-FE must be disabled in Turbo ACC no-SFE build"
-              exit 1
-            fi
-
-            if grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_CM=y' .config; then
-              echo "ERROR: Shortcut-FE CM must be disabled in Turbo ACC no-SFE build"
-              exit 1
-            fi
-
-            if grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_DRV=y' .config; then
-              echo "ERROR: Shortcut-FE ECM/DRV must be disabled in Turbo ACC no-SFE build"
-              exit 1
-            fi
-
-            if ! grep -q '^CONFIG_PACKAGE_kmod-fs-f2fs=y' .config; then
-              echo "ERROR: kmod-fs-f2fs not selected"
-              exit 1
-            fi
-
-            if ! grep -q '^CONFIG_PACKAGE_f2fs-tools=y' .config; then
-              echo "ERROR: f2fs-tools not selected"
-              exit 1
-            fi
-
-            if ! grep -q '^CONFIG_PACKAGE_f2fsck=y' .config; then
-              echo "ERROR: f2fsck not selected"
-              exit 1
-            fi
-
-            if ! grep -q '^CONFIG_PACKAGE_mkf2fs=y' .config; then
-              echo "ERROR: mkf2fs not selected"
-              exit 1
-            fi
-
-            echo "===== Ensure EQOS Plus is disabled ====="
-            if grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config; then
-              echo "ERROR: luci-app-eqosplus must be disabled"
-              exit 1
-            fi
-            if grep -q '^CONFIG_PACKAGE_kmod-ifb=y' .config; then
-              echo "ERROR: kmod-ifb must be disabled"
-              exit 1
-            fi
-            if grep -q '^CONFIG_PACKAGE_tc-tiny=y' .config; then
-              echo "ERROR: tc-tiny must be disabled"
-              exit 1
-            fi
-            if grep -q '^CONFIG_PACKAGE_bc=y' .config; then
-              echo "ERROR: bc must be disabled"
-              exit 1
-            fi
-
-            echo "===== Note ====="
-            echo "nftables-json is allowed because firewall4/base system may select it."
-          } 2>&1 | tee logs/08_diy_part2_and_defconfig.log
-
-      - name: Validate final config
-        run: |
-          {
-            echo "===== Validate final config ====="
-            date
-            cd openwrt
-
-            echo "===== Target ====="
-            grep -E '^CONFIG_TARGET_.*=y|^CONFIG_TARGET_(BOARD|SUBTARGET|PROFILE)=' .config || true
-
-            grep -q '^CONFIG_TARGET_mediatek=y' .config
-            grep -q '^CONFIG_TARGET_mediatek_filogic=y' .config
-            grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=y' .config
-            grep -q '^CONFIG_TARGET_ROOTFS_SQUASHFS=y' .config
-
-            echo "===== Must not be OpenWrt One ====="
-            ! grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_openwrt_one=y' .config
-            ! grep -q '^CONFIG_TARGET_PROFILE="DEVICE_openwrt_one"' .config
-
-            echo "===== Required base packages ====="
-            grep -q '^CONFIG_PACKAGE_luci=y' .config
-            grep -q '^CONFIG_PACKAGE_luci-i18n-base-zh-cn=y' .config
-            grep -q '^CONFIG_PACKAGE_openssh-sftp-server=y' .config
-
-            echo "===== Required Argon package ====="
-            grep -q '^CONFIG_PACKAGE_luci-theme-argon=y' .config
-            test -d package/luci-theme-argon
-            test -f files/etc/uci-defaults/02-set-argon-theme
-            grep -q "/luci-static/argon" files/etc/uci-defaults/02-set-argon-theme
-
-            echo "===== Required OpenList package ====="
-            test -d package/openlist
-            test -d feeds/packages/lang/golang
-            grep -q '^CONFIG_PACKAGE_openlist=y' .config
-            grep -q '^CONFIG_PACKAGE_luci-app-openlist=y' .config
-            grep -q '^CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y' .config
-
-            echo "===== Required Lucky packages ====="
-            grep -q '^CONFIG_PACKAGE_lucky=y' .config
-            grep -q '^CONFIG_PACKAGE_luci-app-lucky=y' .config
-
-            echo "===== Required Turbo ACC no-SFE packages ====="
-            grep -q '^CONFIG_PACKAGE_luci-app-turboacc=y' .config
-            grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING=y' .config
-            grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_BBR_CCA=y' .config
-            grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_NFT_FULLCONE=y' .config
-            grep -q '^CONFIG_PACKAGE_kmod-nft-offload=y' .config
-            grep -q '^CONFIG_PACKAGE_kmod-tcp-bbr=y' .config
-            grep -q '^CONFIG_PACKAGE_kmod-nft-fullcone=y' .config
-            ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE=y' .config
-            ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_CM=y' .config
-            ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_DRV=y' .config
-            test -d package/turboacc
-            test -f package/turboacc/luci-app-turboacc/Makefile
-            test -f package/turboacc/nft-fullcone/Makefile
-
-            echo "===== Required F2FS packages for /dev/fitrw overlay ====="
-            grep -q '^CONFIG_PACKAGE_kmod-fs-f2fs=y' .config
-            grep -q '^CONFIG_PACKAGE_f2fs-tools=y' .config
-            grep -q '^CONFIG_PACKAGE_f2fsck=y' .config
-            grep -q '^CONFIG_PACKAGE_mkf2fs=y' .config
-
-            echo "===== Ensure EQOS Plus disabled ====="
-            ! grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config
-            ! grep -q '^CONFIG_PACKAGE_kmod-ifb=y' .config
-            ! grep -q '^CONFIG_PACKAGE_tc-tiny=y' .config
-            ! grep -q '^CONFIG_PACKAGE_bc=y' .config
-
-            echo "===== Note ====="
-            echo "nftables-json is allowed because it can be selected by firewall4/base system."
-
-            echo "===== Required fixed minimal DiskMan package ====="
-            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|luci-compat|luci-lua-runtime|luci-lib-base|luci-lib-nixio|luci-lib-ip|luci-lib-jsonc|luci-lib-ipkg|lua|libubus-lua|liblucihttp-lua|ucode-mod-lua|parted|lsblk|e2fsprogs|f2fs-tools|f2fsck|mkf2fs|smartmontools|kmod-fs-ext4|kmod-fs-f2fs|mount-utils)' .config || true
+            grep -E 'CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone|kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs|nlbwmon|luci-app-nlbwmon|luci-app-eqosplus|kmod-ifb|tc-tiny|bc|shortcut-fe|fast-classifier)' .config || true
+            grep -E '^# CONFIG_PACKAGE_(luci-app-diskman|luci-i18n-diskman|lucky|luci-app-lucky|luci-app-turboacc|kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs|nlbwmon|luci-app-nlbwmon|luci-app-eqosplus|kmod-ifb|tc-tiny|bc|shortcut-fe|fast-classifier)' .config || true
 
             require_config() {
               local key="$1"
-
               if grep -q "^${key}=y" .config; then
                 echo "OK: ${key}=y"
               else
                 echo "ERROR: missing ${key}=y"
-                echo "----- matched lines for ${key} -----"
                 grep -E "^${key}=|^# ${key} is not set" .config || true
                 exit 1
               fi
             }
 
-            test -d package/luci-app-diskman
-            test -d package/lucky
-            test -d package/turboacc
-            test ! -d package/luci-app-eqosplus
+            echo "===== Required main packages ====="
+            require_config CONFIG_TARGET_mediatek
+            require_config CONFIG_TARGET_mediatek_filogic
+            require_config CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m
+            require_config CONFIG_TARGET_ROOTFS_SQUASHFS
+
+            require_config CONFIG_PACKAGE_luci
+            require_config CONFIG_PACKAGE_luci-i18n-base-zh-cn
+            require_config CONFIG_PACKAGE_luci-theme-argon
+            require_config CONFIG_PACKAGE_openssh-sftp-server
+            require_config CONFIG_PACKAGE_ttyd
+            require_config CONFIG_PACKAGE_luci-app-ttyd
+            require_config CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn
+
+            require_config CONFIG_PACKAGE_openlist
+            require_config CONFIG_PACKAGE_luci-app-openlist
+            require_config CONFIG_PACKAGE_luci-i18n-openlist-zh-cn
+
+            require_config CONFIG_PACKAGE_lucky
+            require_config CONFIG_PACKAGE_luci-app-lucky
+
+            require_config CONFIG_PACKAGE_luci-app-turboacc
+            require_config CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING
+            require_config CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_BBR_CCA
+            require_config CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_NFT_FULLCONE
+            require_config CONFIG_PACKAGE_kmod-nft-offload
+            require_config CONFIG_PACKAGE_kmod-tcp-bbr
+            require_config CONFIG_PACKAGE_kmod-nft-fullcone
+
+            require_config CONFIG_PACKAGE_nlbwmon
+            require_config CONFIG_PACKAGE_luci-app-nlbwmon
+            require_config CONFIG_PACKAGE_luci-app-eqosplus
+            require_config CONFIG_PACKAGE_kmod-ifb
+            require_config CONFIG_PACKAGE_tc-tiny
+            require_config CONFIG_PACKAGE_bc
 
             require_config CONFIG_PACKAGE_luci-app-diskman
             require_config CONFIG_PACKAGE_luci-i18n-diskman-zh-cn
@@ -392,40 +220,46 @@ jobs:
             require_config CONFIG_PACKAGE_mount-utils
             require_config CONFIG_PACKAGE_smartmontools
 
-            require_config CONFIG_PACKAGE_lucky
-            require_config CONFIG_PACKAGE_luci-app-lucky
+            require_config CONFIG_PACKAGE_bash
+            require_config CONFIG_PACKAGE_curl
+            require_config CONFIG_PACKAGE_wget-ssl
+            require_config CONFIG_PACKAGE_htop
+            require_config CONFIG_PACKAGE_tcpdump
+            require_config CONFIG_PACKAGE_iperf3
+            require_config CONFIG_PACKAGE_mtr-json
+            require_config CONFIG_PACKAGE_bind-dig
 
-            require_config CONFIG_PACKAGE_luci-app-turboacc
-            require_config CONFIG_PACKAGE_kmod-nft-offload
-            require_config CONFIG_PACKAGE_kmod-tcp-bbr
-            require_config CONFIG_PACKAGE_kmod-nft-fullcone
+            require_config CONFIG_PACKAGE_kmod-mt76
+            require_config CONFIG_PACKAGE_kmod-mt7915e
+            require_config CONFIG_PACKAGE_wpad-basic-mbedtls
+            require_config CONFIG_PACKAGE_wireless-regdb
 
-            echo "===== Required ttyd packages ====="
-            grep -q '^CONFIG_PACKAGE_ttyd=y' .config
-            grep -q '^CONFIG_PACKAGE_luci-app-ttyd=y' .config
-            grep -q '^CONFIG_PACKAGE_luci-i18n-ttyd-zh-cn=y' .config
+            require_config CONFIG_PACKAGE_usbutils
+            require_config CONFIG_PACKAGE_kmod-usb-net
+            require_config CONFIG_PACKAGE_kmod-usb-net-cdc-ether
+            require_config CONFIG_PACKAGE_kmod-usb-net-rndis
+            require_config CONFIG_PACKAGE_kmod-usb-net-cdc-ncm
 
-            echo "===== Required common tools ====="
-            grep -q '^CONFIG_PACKAGE_bash=y' .config
-            grep -q '^CONFIG_PACKAGE_curl=y' .config
-            grep -q '^CONFIG_PACKAGE_wget-ssl=y' .config
-            grep -q '^CONFIG_PACKAGE_htop=y' .config
-            grep -q '^CONFIG_PACKAGE_tcpdump=y' .config
-            grep -q '^CONFIG_PACKAGE_iperf3=y' .config
-            grep -q '^CONFIG_PACKAGE_mtr-json=y' .config
-            grep -q '^CONFIG_PACKAGE_bind-dig=y' .config
+            echo "===== Forbidden packages ====="
+            ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE=y' .config
+            ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_CM=y' .config
+            ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_DRV=y' .config
+            ! grep -q '^CONFIG_PACKAGE_luci-app-argon-config=y' .config
+            ! grep -q '^CONFIG_PACKAGE_luci-app-openclash=y' .config
+            ! grep -q '^CONFIG_PACKAGE_dockerd=y' .config
+            ! grep -q '^CONFIG_PACKAGE_luci-app-dockerman=y' .config
 
-            echo "===== Required WiFi packages ====="
-            grep -q '^CONFIG_PACKAGE_kmod-mt76=y' .config
-            grep -q '^CONFIG_PACKAGE_kmod-mt7915e=y' .config
-            grep -q '^CONFIG_PACKAGE_wpad-basic-mbedtls=y' .config
-            grep -q '^CONFIG_PACKAGE_wireless-regdb=y' .config
-
-            echo "===== Required F50 USB network packages ====="
-            grep -q '^CONFIG_PACKAGE_usbutils=y' .config
-            grep -q '^CONFIG_PACKAGE_kmod-usb-net=y' .config
-            grep -q '^CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y' .config
-            grep -q '^CONFIG_PACKAGE_kmod-usb-net-rndis=y' .config
+            echo "===== Package tree checks ====="
+            test -d package/luci-theme-argon
+            test -d package/lucky
+            test -d package/turboacc
+            test -d package/luci-app-eqosplus
+            test -d package/openlist
+            test -d package/luci-app-diskman
+            test -d feeds/packages/lang/golang
+            test -f package/luci-app-eqosplus/Makefile
+            test -f package/turboacc/luci-app-turboacc/Makefile
+            test -f package/turboacc/nft-fullcone/Makefile
 
             echo "===== Embedded files ====="
             find files -type f | sort
@@ -433,8 +267,9 @@ jobs:
             test -f files/etc/uci-defaults/02-set-argon-theme
             test -f files/etc/uci-defaults/03-disable-lucky-autostart
             test -f files/etc/uci-defaults/04-config-turboacc
+            test -f files/www/luci-static/resources/view/status/include/10_system.js
 
-            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme|files/etc/uci-defaults/03-disable-lucky-autostart|files/etc/uci-defaults/04-config-turboacc)$' || true)"
+            bad_files="$(find files -type f | sort | grep -v -E '^(files/etc/uci-defaults/01-enable-wifi|files/etc/uci-defaults/02-set-argon-theme|files/etc/uci-defaults/03-disable-lucky-autostart|files/etc/uci-defaults/04-config-turboacc|files/www/luci-static/resources/view/status/include/10_system.js)$' || true)"
             if [ -n "$bad_files" ]; then
               echo "ERROR: unexpected embedded files:"
               echo "$bad_files"
@@ -442,7 +277,7 @@ jobs:
             fi
 
             echo "Validate passed."
-          } 2>&1 | tee logs/09_validate_config.log
+          } 2>&1 | tee logs/07_diy_part2_and_defconfig.log
 
       - name: Download sources
         run: |
@@ -451,7 +286,7 @@ jobs:
             date
             cd openwrt
             make download -j8 V=s
-          } 2>&1 | tee logs/10_download.log
+          } 2>&1 | tee logs/08_download.log
 
       - name: Build OpenWrt
         run: |
@@ -473,24 +308,7 @@ jobs:
 
             echo "===== Build done ====="
             date
-          } 2>&1 | tee logs/11_compile.log
-
-      - name: Disk usage and outputs
-        if: ${{ always() }}
-        run: |
-          {
-            echo "===== Disk usage and outputs ====="
-            date
-            df -h
-
-            echo
-            echo "===== Output files ====="
-            find openwrt/bin/targets -type f 2>/dev/null | sort || true
-
-            echo
-            echo "===== Output sizes ====="
-            find openwrt/bin/targets -type f -exec ls -lah {} \; 2>/dev/null | sort || true
-          } 2>&1 | tee logs/12_outputs.log
+          } 2>&1 | tee logs/09_compile.log
 
       - name: Prepare firmware files
         if: ${{ always() && env.UPLOAD_FIRMWARE == 'true' }}
@@ -508,13 +326,13 @@ jobs:
 
             echo "===== release-files ====="
             find release-files -type f -exec ls -lah {} \; 2>/dev/null | sort || true
-          } 2>&1 | tee logs/13_prepare_firmware.log
+          } 2>&1 | tee logs/10_prepare_firmware.log
 
-      - name: Validate firmware manifest forbidden packages
+      - name: Validate firmware manifest
         if: ${{ always() }}
         run: |
           {
-            echo "===== Validate firmware manifest forbidden packages ====="
+            echo "===== Validate firmware manifest ====="
             date
 
             manifest="$(find release-files openwrt/bin/targets -type f -name '*.manifest' 2>/dev/null | head -n 1 || true)"
@@ -527,77 +345,36 @@ jobs:
 
             echo "manifest=$manifest"
 
-            echo "===== suspicious packages in manifest ====="
-            grep -Ei 'diskman|lucky|turboacc|fullcone|offload|bbr|shortcut|fast-classifier|eqos|ifb|nftables|tc-tiny|rpcd-mod-file|btrfs|exfat|f2fs|ntfs|dosfstools|kmod-fs|usb-storage|block-mount|mount-utils' "$manifest" || true
+            echo "===== important packages in manifest ====="
+            grep -Ei 'diskman|lucky|turboacc|fullcone|offload|bbr|nlbwmon|eqos|ifb|tc-tiny|^bc|f2fs|mkf2fs|kmod-fs|shortcut|fast-classifier' "$manifest" || true
 
-            if grep -Eq '^(luci-app-eqosplus|kmod-ifb|tc-tiny|bc)([[:space:]-]|$)' "$manifest"; then
-              echo "ERROR: EQOS Plus related package found in manifest:"
-              grep -E '^(luci-app-eqosplus|kmod-ifb|tc-tiny|bc)([[:space:]-]|$)' "$manifest" || true
-              exit 1
-            fi
+            require_manifest() {
+              local pattern="$1"
+              local name="$2"
+              if ! grep -Eq "$pattern" "$manifest"; then
+                echo "ERROR: $name not found in manifest"
+                grep -Ei "$name" "$manifest" || true
+                exit 1
+              fi
+            }
 
-            if ! grep -Eq '^(lucky|luci-app-lucky)([[:space:]-]|$)' "$manifest"; then
-              echo "ERROR: lucky packages not found in manifest"
-              grep -Ei 'lucky' "$manifest" || true
-              exit 1
-            fi
-
-            if ! grep -Eq '^(luci-app-turboacc)([[:space:]-]|$)' "$manifest"; then
-              echo "ERROR: luci-app-turboacc not found in manifest"
-              grep -Ei 'turboacc' "$manifest" || true
-              exit 1
-            fi
-
-            if ! grep -Eq '^(kmod-nft-offload)([[:space:]-]|$)' "$manifest"; then
-              echo "ERROR: kmod-nft-offload not found in manifest"
-              grep -Ei 'offload' "$manifest" || true
-              exit 1
-            fi
-
-            if ! grep -Eq '^(kmod-tcp-bbr)([[:space:]-]|$)' "$manifest"; then
-              echo "ERROR: kmod-tcp-bbr not found in manifest"
-              grep -Ei 'bbr' "$manifest" || true
-              exit 1
-            fi
-
-            if ! grep -Eq '^(kmod-nft-fullcone)([[:space:]-]|$)' "$manifest"; then
-              echo "ERROR: kmod-nft-fullcone not found in manifest"
-              grep -Ei 'fullcone' "$manifest" || true
-              exit 1
-            fi
-
-            if ! grep -Eq '^(kmod-fs-f2fs)([[:space:]-]|$)' "$manifest"; then
-              echo "ERROR: kmod-fs-f2fs not found in manifest"
-              grep -Ei 'f2fs' "$manifest" || true
-              exit 1
-            fi
-
-            if ! grep -Eq '^(f2fs-tools)([[:space:]-]|$)' "$manifest"; then
-              echo "ERROR: f2fs-tools not found in manifest"
-              grep -Ei 'f2fs' "$manifest" || true
-              exit 1
-            fi
-
-            if ! grep -Eq '^(f2fsck)([[:space:]-]|$)' "$manifest"; then
-              echo "ERROR: f2fsck not found in manifest"
-              grep -Ei 'f2fs' "$manifest" || true
-              exit 1
-            fi
-
-            if ! grep -Eq '^(mkf2fs)([[:space:]-]|$)' "$manifest"; then
-              echo "ERROR: mkf2fs not found in manifest"
-              grep -Ei 'mkf2fs|f2fs' "$manifest" || true
-              exit 1
-            fi
+            require_manifest '^(lucky|luci-app-lucky)([[:space:]-]|$)' 'lucky'
+            require_manifest '^(luci-app-turboacc)([[:space:]-]|$)' 'luci-app-turboacc'
+            require_manifest '^(kmod-nft-offload)([[:space:]-]|$)' 'kmod-nft-offload'
+            require_manifest '^(kmod-tcp-bbr)([[:space:]-]|$)' 'kmod-tcp-bbr'
+            require_manifest '^(kmod-nft-fullcone)([[:space:]-]|$)' 'kmod-nft-fullcone'
+            require_manifest '^(nlbwmon|luci-app-nlbwmon)([[:space:]-]|$)' 'nlbwmon'
+            require_manifest '^(luci-app-eqosplus|kmod-ifb|tc-tiny|bc)([[:space:]-]|$)' 'eqosplus'
+            require_manifest '^(kmod-fs-f2fs)([[:space:]-]|$)' 'kmod-fs-f2fs'
+            require_manifest '^(f2fs-tools)([[:space:]-]|$)' 'f2fs-tools'
+            require_manifest '^(f2fsck)([[:space:]-]|$)' 'f2fsck'
+            require_manifest '^(mkf2fs)([[:space:]-]|$)' 'mkf2fs'
 
             if grep -Eiq '^(kmod-fast-classifier|kmod-shortcut-fe|kmod-shortcut-fe-cm|kmod-shortcut-fe-drv)([[:space:]-]|$)' "$manifest"; then
               echo "ERROR: Shortcut-FE related package found in no-SFE manifest:"
               grep -Ei '^(kmod-fast-classifier|kmod-shortcut-fe|kmod-shortcut-fe-cm|kmod-shortcut-fe-drv)([[:space:]-]|$)' "$manifest" || true
               exit 1
             fi
-
-            echo "===== Note ====="
-            echo "nftables-json is allowed and is not treated as EQOS residue."
 
             forbidden='^(btrfs-progs|kmod-fs-btrfs|kmod-fs-exfat|kmod-fs-msdos|kmod-fs-ntfs3|kmod-fs-vfat|dosfstools|exfat-fsck|exfat-mkfs|ntfs-3g-utils|kmod-usb-storage|kmod-usb-storage-uas|block-mount)([[:space:]-]|$)'
 
@@ -614,104 +391,40 @@ jobs:
             else
               echo "Manifest validate passed."
             fi
-          } 2>&1 | tee logs/14_validate_manifest.log
+          } 2>&1 | tee logs/11_validate_manifest.log
 
-      - name: Collect full diagnostics
+      - name: Collect diagnostics
         if: ${{ always() }}
         run: |
           set +e
-          mkdir -p diagnostics/root diagnostics/openwrt diagnostics/openwrt/tmp diagnostics/openwrt/package diagnostics/openwrt/bin diagnostics/logs
-
-          echo "===== Collect full diagnostics =====" | tee diagnostics/00_collect.log
-          date | tee -a diagnostics/00_collect.log
-
-          echo "===== Runner info =====" > diagnostics/root/runner_info.txt
-          uname -a >> diagnostics/root/runner_info.txt 2>&1
-          lsb_release -a >> diagnostics/root/runner_info.txt 2>&1
-          df -h >> diagnostics/root/runner_info.txt 2>&1
-          free -h >> diagnostics/root/runner_info.txt 2>&1
-          env | sort >> diagnostics/root/env.txt 2>&1
-
+          mkdir -p diagnostics/openwrt diagnostics/logs
           cp -a logs diagnostics/logs 2>/dev/null || true
 
           if [ -d openwrt ]; then
             cd openwrt
-
-            echo "===== Git =====" > "$GITHUB_WORKSPACE/diagnostics/openwrt/git.txt"
-            git log -1 --oneline >> "$GITHUB_WORKSPACE/diagnostics/openwrt/git.txt" 2>&1
-            git status --short >> "$GITHUB_WORKSPACE/diagnostics/openwrt/git.txt" 2>&1
-
             cp -f .config "$GITHUB_WORKSPACE/diagnostics/openwrt/dot_config.txt" 2>/dev/null || true
             ./scripts/diffconfig.sh > "$GITHUB_WORKSPACE/diagnostics/openwrt/diffconfig.txt" 2>&1 || true
 
-            cp -f feeds.conf.default "$GITHUB_WORKSPACE/diagnostics/openwrt/feeds.conf.default.txt" 2>/dev/null || true
-            cp -f feeds.conf "$GITHUB_WORKSPACE/diagnostics/openwrt/feeds.conf.txt" 2>/dev/null || true
-
-            cp -f tmp/.packageinfo "$GITHUB_WORKSPACE/diagnostics/openwrt/tmp/packageinfo.txt" 2>/dev/null || true
-            cp -f tmp/.config-package.in "$GITHUB_WORKSPACE/diagnostics/openwrt/tmp/config-package.in.txt" 2>/dev/null || true
-            cp -f tmp/.config-target.in "$GITHUB_WORKSPACE/diagnostics/openwrt/tmp/config-target.in.txt" 2>/dev/null || true
-
             {
-              echo "===== grep important packages from .config ====="
-              grep -E 'CONFIG_PACKAGE_(luci|rpcd|diskman|openlist|lucky|turboacc|fullcone|offload|bbr|shortcut|fast-classifier|eqos|ifb|tc-tiny|nftables-json|bc|ttyd|argon|parted|lsblk|e2fsprogs|f2fs-tools|f2fsck|mkf2fs|libf2fs6|smartmontools|kmod-fs-ext4|kmod-fs-f2fs|mount-utils)' .config || true
+              echo "===== git ====="
+              git log -1 --oneline 2>/dev/null || true
+              git status --short 2>/dev/null || true
               echo
-              echo "===== grep important packages from tmp/.packageinfo ====="
-              grep -nE 'Package: (luci-app-diskman|luci-i18n-diskman|luci-app-lucky|lucky|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone|luci-app-eqosplus|kmod-ifb|tc-tiny|nftables-json|bc|rpcd-mod-file|luci-base|kmod-fs-ext4|kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs|libf2fs6|mount-utils)|Depends:|Source-Makefile:.*(diskman|lucky|turboacc|fullcone|eqos|f2fs)' tmp/.packageinfo 2>/dev/null || true
-            } > "$GITHUB_WORKSPACE/diagnostics/openwrt/package/important_package_grep.txt" 2>&1
-
-            {
-              echo "===== Third-party package files ====="
-              find package/luci-theme-argon -maxdepth 6 -type f | sort || true
-              find package/luci-app-diskman -maxdepth 6 -type f | sort || true
-              find package/lucky -maxdepth 6 -type f | sort || true
-              find package/turboacc -maxdepth 6 -type f | sort || true
+              echo "===== files ====="
+              find files -type f -print -exec sed -n '1,220p' {} \; 2>/dev/null || true
               echo
-              echo "===== Ensure no EQOS package directory ====="
-              find package -maxdepth 3 -iname '*eqos*' -print || true
+              echo "===== package grep ====="
+              grep -E 'CONFIG_PACKAGE_(nlbwmon|luci-app-nlbwmon|luci-app-eqosplus|kmod-ifb|tc-tiny|bc|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone|kmod-fs-f2fs|f2fs-tools|f2fsck|mkf2fs)' .config || true
               echo
-              echo "===== Ensure no Shortcut-FE package directory in no-SFE build ====="
-              find package/turboacc -maxdepth 4 -iname '*shortcut*' -print || true
-              echo
-              echo "===== Argon Makefile ====="
-              sed -n '1,220p' package/luci-theme-argon/Makefile 2>/dev/null || true
-              echo
-              echo "===== DiskMan Makefile ====="
-              sed -n '1,260p' package/luci-app-diskman/Makefile 2>/dev/null || true
-              echo
-              echo "===== Lucky Makefiles ====="
-              sed -n '1,220p' package/lucky/luci-app-lucky/Makefile 2>/dev/null || true
-              sed -n '1,260p' package/lucky/lucky/Makefile 2>/dev/null || true
-              echo
-              echo "===== Turbo ACC Makefiles ====="
-              sed -n '1,260p' package/turboacc/luci-app-turboacc/Makefile 2>/dev/null || true
-              sed -n '1,260p' package/turboacc/nft-fullcone/Makefile 2>/dev/null || true
-              echo
-              echo "===== Embedded uci-defaults files ====="
-              find files/etc/uci-defaults -maxdepth 1 -type f -print -exec sed -n '1,280p' {} \; 2>/dev/null || true
-            } > "$GITHUB_WORKSPACE/diagnostics/openwrt/package/third_party_tree_and_makefiles.txt" 2>&1
-
-            {
-              echo "===== Output files ====="
+              echo "===== outputs ====="
               find bin/targets -type f -exec ls -lah {} \; 2>/dev/null | sort || true
               echo
-              echo "===== Manifests ====="
+              echo "===== manifests ====="
               for f in $(find bin/targets -type f -name '*.manifest' 2>/dev/null | sort); do
                 echo "----- $f -----"
                 cat "$f"
               done
-            } > "$GITHUB_WORKSPACE/diagnostics/openwrt/bin/outputs_and_manifests.txt" 2>&1
-
-            mkdir -p "$GITHUB_WORKSPACE/diagnostics/openwrt/manifests"
-            find bin/targets -type f -name '*.manifest' -exec cp -f {} "$GITHUB_WORKSPACE/diagnostics/openwrt/manifests/" \; 2>/dev/null || true
-
-            {
-              echo "===== build_dir failed stamps / logs ====="
-              find build_dir -type f \
-                \( -name '*.log' -o -name 'config.log' -o -name '.configured*' -o -name '.built*' -o -name '.pkgdir*' \) \
-                2>/dev/null | sort | head -2000
-            } > "$GITHUB_WORKSPACE/diagnostics/openwrt/build_dir_interesting_files.txt" 2>&1
-
-            cd "$GITHUB_WORKSPACE"
+            } > "$GITHUB_WORKSPACE/diagnostics/openwrt/summary.txt" 2>&1
           fi
 
           tar -czf OpenWrt_full_diagnostics_${{ github.run_number }}.tar.gz diagnostics logs release-files 2>/dev/null || true
@@ -743,7 +456,7 @@ jobs:
       - name: Generate release tag
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
         run: |
-          echo "RELEASE_TAG=OpenWrt_F50_Lucky_TurboACC_NoSFE_F2FS_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_F50_Monitor_EQOS_Temp_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
@@ -752,15 +465,7 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           body: |
-            RAX3000M F50 build with Lucky, Turbo ACC no-SFE and F2FS /dev/fitrw support.
-
-            Purpose:
-            - Keep Lucky installed.
-            - Disable Lucky autostart by uci-defaults.
-            - Add Turbo ACC in no-SFE stable mode.
-            - Enable Flow Offload, Hardware Flow Offload, FullCone NAT and BBR.
-            - Keep Shortcut-FE disabled for first stability test.
-            - Add F2FS tools required for /dev/fitrw persistent overlay.
+            RAX3000M F50 build with Lucky, Turbo ACC no-SFE, F2FS /dev/fitrw support, traffic monitor, EQOS Plus and LuCI temperature display.
 
             Included:
             - F50 basic USB Ethernet drivers
@@ -770,53 +475,35 @@ jobs:
             - luci-theme-argon
             - OpenList
             - patched minimal DiskMan LuCI package
-            - DiskMan Lua LuCI runtime dependencies
-            - ext4 support
-            - F2FS support for existing /dev/fitrw persistent overlay
+            - F2FS support for /dev/fitrw persistent overlay
             - kmod-fs-f2fs
             - f2fs-tools
             - mkf2fs
             - f2fsck
             - lucky
             - luci-app-lucky
-            - uci-defaults/03-disable-lucky-autostart
             - Turbo ACC no-SFE
             - Flow Offload
             - Hardware Flow Offload
             - FullCone NAT
             - BBR CCA
-            - uci-defaults/04-config-turboacc
-
-            Notes:
-            - Lucky is installed but disabled from boot.
-            - Turbo ACC is installed in no-SFE mode.
-            - Shortcut-FE / SFE is intentionally disabled for this stability build.
-            - F2FS tools are included to avoid mkfs.f2fs missing during /dev/fitrw overlay initialization.
-            - libf2fs6 is dependency-provided by f2fs-tools / mkf2fs / f2fsck and is not forced as a direct .config validation item.
-            - Full diagnostics are uploaded as a workflow artifact.
-            - Manifest package warnings do not block artifact upload by default.
-            - STRICT_MANIFEST_CHECK=false by default.
-            - This build does not include /dev/fitrw format script.
-            - This build does not include F50 automatic USB reprobe scripts.
-            - WiFi uci-defaults script forces split SSID: OpenWrt_2G / OpenWrt_5G.
-            - nftables-json may still exist because it can be selected by firewall4/base system; it is not treated as EQOS residue.
-
-            Explicitly removed for this test:
+            - nlbwmon
+            - luci-app-nlbwmon
             - luci-app-eqosplus
             - kmod-ifb
             - tc-tiny
             - bc
-            - luci-app-argon-config
-            - tempinfo / custom temperature LuCI JS
-            - dark-line CSS patch
-            - USB storage / UAS
-            - block-mount
-            - btrfs/exfat/ntfs tools and kmods
-            - QMI / MBIM / usb-modeswitch / USB serial
-            - manual extroot scripts
-            - OpenClash
-            - Docker
-            - Shortcut-FE / SFE
+            - LuCI overview temperature display through files/www/luci-static/resources/view/status/include/10_system.js
+
+            Notes:
+            - Lucky is installed but disabled from boot.
+            - Turbo ACC is installed in no-SFE mode.
+            - Shortcut-FE / SFE is intentionally disabled.
+            - nlbwmon is included for IPv4 / IPv6 / per-host traffic monitoring.
+            - EQOS Plus is included for per-device bandwidth control.
+            - LuCI system overview scans thermal_zone and hwmon nodes for CPU / WiFi temperature.
+            - If WiFi temperature nodes are exposed, the system page can show values like CPU: 47.6°C, WiFi: 28.0°C 28.0°C.
+            - For accurate EQOS Plus rate limiting, disable Turbo ACC flow offload / hardware flow offload during testing.
           files: release-files/*
           draft: false
           prerelease: false
