@@ -108,6 +108,10 @@ if [ ! -f package/wrtbwmon/Makefile ]; then
     exit 1
 fi
 
+# The upstream wrtbwmon package depends on BusyBox CONFIG_IP. This build already includes ip-full,
+# so depend on ip-full instead; otherwise make defconfig silently deselects wrtbwmon.
+sed -i 's/DEPENDS:=+iptables +@BUSYBOX_CONFIG_IP/DEPENDS:=+iptables +ip-full/' package/wrtbwmon/Makefile
+
 echo "===== Add luci-wrtbwmon source ====="
 rm -rf package/luci-wrtbwmon
 rm -rf /tmp/luci-wrtbwmon-src
@@ -127,8 +131,9 @@ if [ ! -d /tmp/luci-wrtbwmon-src/luci-wrtbwmon ]; then
 fi
 
 mkdir -p package/luci-wrtbwmon
-cp -a /tmp/luci-wrtbwmon-src/luci-wrtbwmon package/luci-wrtbwmon/root
+cp -a /tmp/luci-wrtbwmon-src/luci-wrtbwmon/. package/luci-wrtbwmon/
 rm -rf /tmp/luci-wrtbwmon-src
+rm -f package/luci-wrtbwmon/Makefile
 
 cat > package/luci-wrtbwmon/Makefile <<'EOF_LUCI_WRTBWMON_MAKEFILE'
 include $(TOPDIR)/rules.mk
@@ -140,36 +145,13 @@ PKG_MAINTAINER:=Kiougar <https://github.com/Kiougar/luci-wrtbwmon>
 PKG_LICENSE:=MIT
 PKGARCH:=all
 
-include $(INCLUDE_DIR)/package.mk
+LUCI_TITLE:=LuCI support for wrtbwmon realtime bandwidth usage
+LUCI_DESCRIPTION:=LuCI module that uses wrtbwmon to track per-client bandwidth usage and realtime upload/download speed.
+LUCI_DEPENDS:=+wrtbwmon +luci-compat
 
-define Package/luci-wrtbwmon
-	SECTION:=luci
-	CATEGORY:=LuCI
-	SUBMENU:=3. Applications
-	TITLE:=LuCI support for wrtbwmon realtime bandwidth usage
-	DEPENDS:=+luci +luci-compat +wrtbwmon
-endef
+include $(TOPDIR)/feeds/luci/luci.mk
 
-define Package/luci-wrtbwmon/description
-LuCI module that uses wrtbwmon to track per-client bandwidth usage and realtime upload/download speed.
-endef
-
-define Build/Prepare
-endef
-
-define Build/Configure
-endef
-
-define Build/Compile
-endef
-
-define Package/luci-wrtbwmon/install
-	$(INSTALL_DIR) $(1)/usr/lib/lua/luci $(1)/www
-	if [ -d ./root/luasrc ]; then cp -a ./root/luasrc/* $(1)/usr/lib/lua/luci/; fi
-	if [ -d ./root/htdocs ]; then cp -a ./root/htdocs/* $(1)/www/; fi
-endef
-
-$(eval $(call BuildPackage,luci-wrtbwmon))
+# call BuildPackage - OpenWrt buildroot signature
 EOF_LUCI_WRTBWMON_MAKEFILE
 
 if [ ! -f package/luci-wrtbwmon/Makefile ]; then
