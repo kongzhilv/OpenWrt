@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 Fixed Temp Realtime Speed
+name: Build OpenWrt F50 Temp Wrtbwmon
 
 on:
   workflow_dispatch:
@@ -29,7 +29,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-fixed-overview
+    name: build-f50-temp-wrtbwmon
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
@@ -49,8 +49,8 @@ jobs:
           test -f "$DIY_P2_SH"
           test -f "$DIY_P3_SH"
           test -f files/www/luci-static/resources/view/status/include/10_system.js
-          test -f files/www/luci-static/resources/view/status/include/15_realtime_speed.js
           test -f files/usr/share/rpcd/acl.d/luci-overview-extra.json
+          test ! -f files/www/luci-static/resources/view/status/include/15_realtime_speed.js
 
       - name: Free disk space
         timeout-minutes: 15
@@ -101,12 +101,14 @@ jobs:
           rm -rf tmp
           make defconfig V=s 2>&1 | tee "$GITHUB_WORKSPACE/logs/07c_defconfig.log"
           cp -f .config "$GITHUB_WORKSPACE/logs/07_final.config"
-          grep -E 'CONFIG_PACKAGE_(rpcd-mod-file|nlbwmon|luci-app-nlbwmon|luci-app-eqosplus|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone)' .config || true
+          grep -E 'CONFIG_PACKAGE_(rpcd-mod-file|nlbwmon|luci-app-nlbwmon|wrtbwmon|luci-wrtbwmon|luci-app-eqosplus|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone)' .config || true
+          grep -q '^CONFIG_PACKAGE_wrtbwmon=y' .config
+          grep -q '^CONFIG_PACKAGE_luci-wrtbwmon=y' .config
           echo "===== Embedded files ====="
           find files -type f | sort
           grep -q "fs.trimmed(path)" files/www/luci-static/resources/view/status/include/10_system.js
           grep -q "温度" files/www/luci-static/resources/view/status/include/10_system.js
-          grep -q "实时上下行" files/www/luci-static/resources/view/status/include/15_realtime_speed.js
+          test ! -f files/www/luci-static/resources/view/status/include/15_realtime_speed.js
 
       - name: Download sources
         run: |
@@ -139,7 +141,7 @@ jobs:
         if: ${{ always() && env.UPLOAD_FIRMWARE == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt_Firmware_Fixed_Overview_${{ github.run_number }}
+          name: OpenWrt_Firmware_Temp_Wrtbwmon_${{ github.run_number }}
           path: release-files/**
           if-no-files-found: warn
           retention-days: 14
@@ -149,7 +151,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt_Fixed_Overview_Diagnostics_${{ github.run_number }}
+          name: OpenWrt_Temp_Wrtbwmon_Diagnostics_${{ github.run_number }}
           path: |
             logs/**
             release-files/**
@@ -159,7 +161,7 @@ jobs:
 
       - name: Generate release tag
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
-        run: echo "RELEASE_TAG=OpenWrt_F50_Fixed_Temp_Speed_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+        run: echo "RELEASE_TAG=OpenWrt_F50_Temp_Wrtbwmon_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
@@ -168,13 +170,12 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           body: |
-            RAX3000M F50 build with fixed LuCI overview temperature and realtime upload/download speed.
+            RAX3000M F50 build with fixed Chinese LuCI overview temperature and package-provided realtime traffic monitor.
 
             Changes:
             - LuCI overview temperature uses fs.trimmed() / ubus file read instead of cgi-download.
             - Temperature label is Chinese: 温度.
-            - Adds LuCI overview realtime speed card: 实时上下行.
-            - Adds rpcd ACL for thermal, hwmon and network statistics files.
+            - Realtime upload/download is provided by wrtbwmon + luci-wrtbwmon under Network -> Usage.
             - Keeps nlbwmon for cumulative traffic statistics.
           files: release-files/*
           draft: false
