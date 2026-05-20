@@ -1,0 +1,13 @@
+#!/bin/sh
+
+logger -t enable-wrtbwmon "enable wrtbwmon for luci-wrtbwmon"
+
+if [ -x /etc/init.d/wrtbwmon ]; then
+    /etc/init.d/wrtbwmon enable 2>/dev/null || true
+    /etc/init.d/wrtbwmon start 2>/dev/null || true
+fi
+
+rm -rf /tmp/luci-indexcache /tmp/luci-modulecache 2>/dev/null || true
+
+logger -t enable-wrtbwmon "done"
+exit 0
