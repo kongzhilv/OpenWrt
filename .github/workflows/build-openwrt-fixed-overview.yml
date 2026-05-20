@@ -1,0 +1,181 @@
+name: Build OpenWrt F50 Fixed Temp Realtime Speed
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+      - make
+      - fix-rax3000m-emmc-target
+    paths-ignore:
+      - "*.md"
+      - "LICENSE"
+
+permissions:
+  contents: write
+
+env:
+  REPO_URL: https://github.com/openwrt/openwrt
+  REPO_BRANCH: v25.12.1
+  CONFIG_FILE: .config
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  DIY_P3_SH: diy-part3-overlay.sh
+  UPLOAD_FIRMWARE: "true"
+  UPLOAD_RELEASE: "true"
+  TZ: Asia/Shanghai
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  build:
+    name: build-f50-fixed-overview
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout workflow repo
+        uses: actions/checkout@v4
+
+      - name: Check required files
+        run: |
+          mkdir -p logs release-files diagnostics
+          test -f "$CONFIG_FILE"
+          test -f "$DIY_P1_SH"
+          test -f "$DIY_P2_SH"
+          test -f "$DIY_P3_SH"
+          test -f files/www/luci-static/resources/view/status/include/10_system.js
+          test -f files/www/luci-static/resources/view/status/include/15_realtime_speed.js
+          test -f files/usr/share/rpcd/acl.d/luci-overview-extra.json
+
+      - name: Free disk space
+        timeout-minutes: 15
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          docker image prune --all --force || true
+          sudo timedatectl set-timezone "$TZ" || true
+          df -h
+
+      - name: Install build dependencies
+        timeout-minutes: 60
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install \
+            build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
+            gettext git libncurses-dev libssl-dev python3-setuptools rsync unzip \
+            zlib1g-dev file wget curl swig python3-dev qemu-utils libfuse-dev
+
+      - name: Clone OpenWrt source
+        run: |
+          git clone -b "$REPO_BRANCH" --depth 1 "$REPO_URL" openwrt
+          cd openwrt
+          git log -1 --oneline
+
+      - name: DIY part 1
+        run: |
+          chmod +x "$DIY_P1_SH"
+          cd openwrt
+          "$GITHUB_WORKSPACE/$DIY_P1_SH" 2>&1 | tee "$GITHUB_WORKSPACE/logs/04_diy_part1.log"
+
+      - name: Update feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a 2>&1 | tee "$GITHUB_WORKSPACE/logs/05_feeds_update.log"
+
+      - name: Install feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds install -a 2>&1 | tee "$GITHUB_WORKSPACE/logs/06_feeds_install.log"
+
+      - name: DIY part 2, overlay part 3 and defconfig
+        run: |
+          chmod +x "$DIY_P2_SH" "$DIY_P3_SH"
+          cp -f "$GITHUB_WORKSPACE/$CONFIG_FILE" openwrt/.config
+          cd openwrt
+          "$GITHUB_WORKSPACE/$DIY_P2_SH" 2>&1 | tee "$GITHUB_WORKSPACE/logs/07a_diy_part2.log"
+          "$GITHUB_WORKSPACE/$DIY_P3_SH" 2>&1 | tee "$GITHUB_WORKSPACE/logs/07b_diy_part3_overlay.log"
+          rm -rf tmp
+          make defconfig V=s 2>&1 | tee "$GITHUB_WORKSPACE/logs/07c_defconfig.log"
+          cp -f .config "$GITHUB_WORKSPACE/logs/07_final.config"
+          grep -E 'CONFIG_PACKAGE_(rpcd-mod-file|nlbwmon|luci-app-nlbwmon|luci-app-eqosplus|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone)' .config || true
+          echo "===== Embedded files ====="
+          find files -type f | sort
+          grep -q "fs.trimmed(path)" files/www/luci-static/resources/view/status/include/10_system.js
+          grep -q "温度" files/www/luci-static/resources/view/status/include/10_system.js
+          grep -q "实时上下行" files/www/luci-static/resources/view/status/include/15_realtime_speed.js
+
+      - name: Download sources
+        run: |
+          cd openwrt
+          make download -j8 V=s 2>&1 | tee "$GITHUB_WORKSPACE/logs/08_download.log"
+
+      - name: Build OpenWrt
+        run: |
+          cd openwrt
+          set +e
+          make -j4 V=s 2>&1 | tee "$GITHUB_WORKSPACE/logs/09_compile_j4.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" -ne 0 ]; then
+            make -j1 V=s 2>&1 | tee "$GITHUB_WORKSPACE/logs/09_compile_j1.log"
+          fi
+
+      - name: Prepare firmware files
+        if: ${{ always() && env.UPLOAD_FIRMWARE == 'true' }}
+        run: |
+          mkdir -p release-files
+          if [ -d openwrt/bin/targets ]; then
+            find openwrt/bin/targets -type f \
+              \( -name "*.bin" -o -name "*.img" -o -name "*.img.gz" -o -name "*.itb" -o -name "*.manifest" -o -name "*.buildinfo" -o -name "*.json" -o -name "*.sha256sums" \) \
+              -exec cp -f {} release-files/ \;
+          fi
+          find release-files -type f -exec ls -lah {} \; 2>/dev/null | sort || true
+
+      - name: Upload firmware artifact
+        if: ${{ always() && env.UPLOAD_FIRMWARE == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWrt_Firmware_Fixed_Overview_${{ github.run_number }}
+          path: release-files/**
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 6
+
+      - name: Upload diagnostics artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWrt_Fixed_Overview_Diagnostics_${{ github.run_number }}
+          path: |
+            logs/**
+            release-files/**
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 6
+
+      - name: Generate release tag
+        if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
+        run: echo "RELEASE_TAG=OpenWrt_F50_Fixed_Temp_Speed_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+
+      - name: Publish GitHub release
+        if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
+          body: |
+            RAX3000M F50 build with fixed LuCI overview temperature and realtime upload/download speed.
+
+            Changes:
+            - LuCI overview temperature uses fs.trimmed() / ubus file read instead of cgi-download.
+            - Temperature label is Chinese: 温度.
+            - Adds LuCI overview realtime speed card: 实时上下行.
+            - Adds rpcd ACL for thermal, hwmon and network statistics files.
+            - Keeps nlbwmon for cumulative traffic statistics.
+          files: release-files/*
+          draft: false
+          prerelease: false
