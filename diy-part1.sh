@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part1: add Argon, Lucky, Turbo ACC no-SFE and EQOS Plus ====="
+echo "===== DIY part1: add Argon, Lucky, Turbo ACC no-SFE, EQOS Plus and wrtbwmon ====="
 
 echo "===== Remove known conflicting third-party feed leftovers from feeds.conf.default ====="
 if [ -f feeds.conf.default ]; then
@@ -88,10 +88,101 @@ if [ ! -f package/luci-app-eqosplus/Makefile ]; then
     exit 1
 fi
 
+echo "===== Add wrtbwmon backend source ====="
+rm -rf package/wrtbwmon
+rm -rf /tmp/wrtbwmon-src
+
+git clone --depth 1 https://github.com/brvphoenix/wrtbwmon.git /tmp/wrtbwmon-src
+
+if [ ! -f /tmp/wrtbwmon-src/wrtbwmon/Makefile ]; then
+    echo "ERROR: wrtbwmon Makefile missing"
+    find /tmp/wrtbwmon-src -maxdepth 5 -type f -name Makefile -print || true
+    exit 1
+fi
+
+cp -a /tmp/wrtbwmon-src/wrtbwmon package/wrtbwmon
+rm -rf /tmp/wrtbwmon-src
+
+if [ ! -f package/wrtbwmon/Makefile ]; then
+    echo "ERROR: package/wrtbwmon/Makefile missing after copy"
+    exit 1
+fi
+
+echo "===== Add luci-wrtbwmon source ====="
+rm -rf package/luci-wrtbwmon
+rm -rf /tmp/luci-wrtbwmon-src
+
+git clone --depth 1 https://github.com/Kiougar/luci-wrtbwmon.git /tmp/luci-wrtbwmon-src
+
+if [ ! -f /tmp/luci-wrtbwmon-src/CONTROL/control ]; then
+    echo "ERROR: luci-wrtbwmon CONTROL/control missing"
+    find /tmp/luci-wrtbwmon-src -maxdepth 4 -type f | sort || true
+    exit 1
+fi
+
+if [ ! -d /tmp/luci-wrtbwmon-src/luci-wrtbwmon ]; then
+    echo "ERROR: luci-wrtbwmon payload directory missing"
+    find /tmp/luci-wrtbwmon-src -maxdepth 3 -type d | sort || true
+    exit 1
+fi
+
+mkdir -p package/luci-wrtbwmon
+cp -a /tmp/luci-wrtbwmon-src/luci-wrtbwmon package/luci-wrtbwmon/root
+rm -rf /tmp/luci-wrtbwmon-src
+
+cat > package/luci-wrtbwmon/Makefile <<'EOF_LUCI_WRTBWMON_MAKEFILE'
+include $(TOPDIR)/rules.mk
+
+PKG_NAME:=luci-wrtbwmon
+PKG_VERSION:=0.8.3
+PKG_RELEASE:=1
+PKG_MAINTAINER:=Kiougar <https://github.com/Kiougar/luci-wrtbwmon>
+PKG_LICENSE:=MIT
+PKGARCH:=all
+
+include $(INCLUDE_DIR)/package.mk
+
+define Package/luci-wrtbwmon
+	SECTION:=luci
+	CATEGORY:=LuCI
+	SUBMENU:=3. Applications
+	TITLE:=LuCI support for wrtbwmon realtime bandwidth usage
+	DEPENDS:=+luci +luci-compat +wrtbwmon
+endef
+
+define Package/luci-wrtbwmon/description
+LuCI module that uses wrtbwmon to track per-client bandwidth usage and realtime upload/download speed.
+endef
+
+define Build/Prepare
+endef
+
+define Build/Configure
+endef
+
+define Build/Compile
+endef
+
+define Package/luci-wrtbwmon/install
+	$(INSTALL_DIR) $(1)/usr/lib/lua/luci $(1)/www
+	if [ -d ./root/luasrc ]; then cp -a ./root/luasrc/* $(1)/usr/lib/lua/luci/; fi
+	if [ -d ./root/htdocs ]; then cp -a ./root/htdocs/* $(1)/www/; fi
+endef
+
+$(eval $(call BuildPackage,luci-wrtbwmon))
+EOF_LUCI_WRTBWMON_MAKEFILE
+
+if [ ! -f package/luci-wrtbwmon/Makefile ]; then
+    echo "ERROR: package/luci-wrtbwmon/Makefile missing after rewrite"
+    exit 1
+fi
+
 echo "===== DIY part1 package tree check ====="
 find package/luci-theme-argon -maxdepth 3 -type f -name Makefile -print || true
 find package/lucky -maxdepth 3 -type f -name Makefile -print || true
 find package/turboacc -maxdepth 4 -type f -name Makefile -print || true
 find package/luci-app-eqosplus -maxdepth 4 -type f -name Makefile -print || true
+find package/wrtbwmon -maxdepth 4 -type f -name Makefile -print || true
+find package/luci-wrtbwmon -maxdepth 4 -type f -name Makefile -print || true
 
 echo "===== DIY part1 done ====="
