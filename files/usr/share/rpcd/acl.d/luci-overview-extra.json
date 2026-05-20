@@ -1,19 +1,16 @@
 {
   "luci-overview-extra": {
-    "description": "Allow LuCI status overview to read temperature and realtime speed files",
+    "description": "Allow LuCI status overview to read thermal sensor files",
     "read": {
       "ubus": {
-        "file": [ "read", "stat", "list" ],
-        "network.interface.wan": [ "status" ]
+        "file": [ "read", "stat", "list" ]
       },
       "file": {
         "/sys/class/thermal/thermal_zone*/type": [ "read" ],
         "/sys/class/thermal/thermal_zone*/temp": [ "read" ],
         "/sys/class/hwmon/hwmon*/name": [ "read" ],
         "/sys/class/hwmon/hwmon*/temp*_label": [ "read" ],
-        "/sys/class/hwmon/hwmon*/temp*_input": [ "read" ],
-        "/sys/class/net/*/statistics/rx_bytes": [ "read" ],
-        "/sys/class/net/*/statistics/tx_bytes": [ "read" ]
+        "/sys/class/hwmon/hwmon*/temp*_input": [ "read" ]
       }
     }
   }
