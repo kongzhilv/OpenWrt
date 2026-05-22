@@ -95,17 +95,30 @@ jobs:
         run: |
           chmod +x "$DIY_P2_SH" "$DIY_P3_SH"
           cp -f "$GITHUB_WORKSPACE/$CONFIG_FILE" openwrt/.config
+
           cd openwrt
+
           "$GITHUB_WORKSPACE/$DIY_P2_SH" 2>&1 | tee "$GITHUB_WORKSPACE/logs/07a_diy_part2.log"
           "$GITHUB_WORKSPACE/$DIY_P3_SH" 2>&1 | tee "$GITHUB_WORKSPACE/logs/07b_diy_part3_overlay.log"
+
           rm -rf tmp
           make defconfig V=s 2>&1 | tee "$GITHUB_WORKSPACE/logs/07c_defconfig.log"
+
           cp -f .config "$GITHUB_WORKSPACE/logs/07_final.config"
-          grep -E 'CONFIG_PACKAGE_(rpcd-mod-file|nlbwmon|luci-app-nlbwmon|wrtbwmon|luci-wrtbwmon|luci-app-eqosplus|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone)' .config || true
+
+          echo "===== Selected traffic / turbo / wrtbwmon config ====="
+          grep -E 'CONFIG_PACKAGE_(rpcd-mod-file|nlbwmon|luci-app-nlbwmon|wrtbwmon|luci-app-wrtbwmon|iptables-nft|ip6tables-nft|xtables-nft|luci-app-eqosplus|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone)' .config || true
+
           grep -q '^CONFIG_PACKAGE_wrtbwmon=y' .config
-          grep -q '^CONFIG_PACKAGE_luci-wrtbwmon=y' .config
+          grep -q '^CONFIG_PACKAGE_luci-app-wrtbwmon=y' .config
+          grep -q '^CONFIG_PACKAGE_iptables-nft=y' .config
+          grep -q '^CONFIG_PACKAGE_ip6tables-nft=y' .config
+          grep -q '^CONFIG_PACKAGE_xtables-nft=y' .config
+          ! grep -q '^CONFIG_PACKAGE_luci-wrtbwmon=y' .config
+
           echo "===== Embedded files ====="
           find files -type f | sort
+
           grep -q "fs.trimmed(path)" files/www/luci-static/resources/view/status/include/10_system.js
           grep -q "温度" files/www/luci-static/resources/view/status/include/10_system.js
           test ! -f files/www/luci-static/resources/view/status/include/15_realtime_speed.js
@@ -118,10 +131,12 @@ jobs:
       - name: Build OpenWrt
         run: |
           cd openwrt
+
           set +e
           make -j4 V=s 2>&1 | tee "$GITHUB_WORKSPACE/logs/09_compile_j4.log"
           rc=${PIPESTATUS[0]}
           set -e
+
           if [ "$rc" -ne 0 ]; then
             make -j1 V=s 2>&1 | tee "$GITHUB_WORKSPACE/logs/09_compile_j1.log"
           fi
@@ -135,6 +150,7 @@ jobs:
               \( -name "*.bin" -o -name "*.img" -o -name "*.img.gz" -o -name "*.itb" -o -name "*.manifest" -o -name "*.buildinfo" -o -name "*.json" -o -name "*.sha256sums" \) \
               -exec cp -f {} release-files/ \;
           fi
+
           find release-files -type f -exec ls -lah {} \; 2>/dev/null | sort || true
 
       - name: Upload firmware artifact
@@ -161,7 +177,8 @@ jobs:
 
       - name: Generate release tag
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
-        run: echo "RELEASE_TAG=OpenWrt_F50_Temp_Wrtbwmon_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+        run: |
+          echo "RELEASE_TAG=OpenWrt_F50_Temp_Wrtbwmon_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
@@ -175,8 +192,10 @@ jobs:
             Changes:
             - LuCI overview temperature uses fs.trimmed() / ubus file read instead of cgi-download.
             - Temperature label is Chinese: 温度.
-            - Realtime upload/download is provided by wrtbwmon + luci-wrtbwmon under Network -> Usage.
+            - Realtime upload/download is provided by wrtbwmon + luci-app-wrtbwmon under Network -> Traffic status.
             - Keeps nlbwmon for cumulative traffic statistics.
+            - Uses iptables-nft / ip6tables-nft compatibility for OpenWrt 25.12 firewall4/nftables.
+            - Disables flow offloading for wrtbwmon accuracy.
           files: release-files/*
           draft: false
           prerelease: false
