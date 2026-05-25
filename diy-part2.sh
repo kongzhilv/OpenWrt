@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part2: Turbo ACC no-SFE, F2FS fitrw support, traffic monitor, EQOS Plus, temp JS, clean scripts, force split WiFi SSID ====="
+echo "===== DIY part2: F2FS fitrw support, wrtbwmon, EQOS Plus fix, Lucky enabled, clean scripts, force split WiFi SSID ====="
 
 # 默认 IP
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
@@ -47,6 +47,18 @@ fi
 if [ ! -f package/luci-app-eqosplus/Makefile ]; then
     echo "ERROR: luci-app-eqosplus missing, check diy-part1.sh"
     find package -maxdepth 4 -type f -name Makefile | grep -i eqos || true
+    exit 1
+fi
+
+if [ ! -f package/wrtbwmon/Makefile ]; then
+    echo "ERROR: wrtbwmon missing, check diy-part1.sh"
+    find package -maxdepth 5 -type f -name Makefile | grep -i wrtbwmon || true
+    exit 1
+fi
+
+if [ ! -f package/luci-app-wrtbwmon/Makefile ]; then
+    echo "ERROR: luci-app-wrtbwmon missing, check diy-part1.sh"
+    find package -maxdepth 5 -type f -name Makefile | grep -i wrtbwmon || true
     exit 1
 fi
 
@@ -180,6 +192,8 @@ find package/luci-theme-argon -maxdepth 3 -type f -name Makefile -print || true
 find package/lucky -maxdepth 3 -type f -name Makefile -print || true
 find package/turboacc -maxdepth 4 -type f -name Makefile -print || true
 find package/luci-app-eqosplus -maxdepth 4 -type f -name Makefile -print || true
+find package/wrtbwmon -maxdepth 4 -type f -name Makefile -print || true
+find package/luci-app-wrtbwmon -maxdepth 4 -type f -name Makefile -print || true
 find package/luci-app-diskman -maxdepth 3 -type d | sort || true
 find package/luci-app-diskman -maxdepth 4 -type f -iname '*.po' | sort || true
 
@@ -406,6 +420,7 @@ CONFIG_TARGET_ROOTFS_SQUASHFS=y
 CONFIG_PACKAGE_luci=y
 CONFIG_LUCI_LANG_zh_Hans=y
 CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+CONFIG_PACKAGE_rpcd-mod-file=y
 
 # LuCI Argon theme
 CONFIG_PACKAGE_luci-theme-argon=y
@@ -423,25 +438,31 @@ CONFIG_PACKAGE_openlist=y
 CONFIG_PACKAGE_luci-app-openlist=y
 CONFIG_PACKAGE_luci-i18n-openlist-zh-cn=y
 
-# Lucky installed but autostart disabled by uci-defaults
+# Lucky
 CONFIG_PACKAGE_lucky=y
 CONFIG_PACKAGE_luci-app-lucky=y
 
 # Turbo ACC no-SFE stable mode
 CONFIG_PACKAGE_luci-app-turboacc=y
-CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING=y
+# CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING is not set
 CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_BBR_CCA=y
 CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_NFT_FULLCONE=y
 # CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE is not set
 # CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_CM is not set
 # CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_SHORTCUT_FE_DRV is not set
-CONFIG_PACKAGE_kmod-nft-offload=y
+# CONFIG_PACKAGE_kmod-nft-offload is not set
 CONFIG_PACKAGE_kmod-tcp-bbr=y
 CONFIG_PACKAGE_kmod-nft-fullcone=y
 
-# Traffic monitor: IPv4 / IPv6 / per-host traffic
-CONFIG_PACKAGE_nlbwmon=y
-CONFIG_PACKAGE_luci-app-nlbwmon=y
+# Traffic monitor: realtime per-client speed only
+# CONFIG_PACKAGE_nlbwmon is not set
+# CONFIG_PACKAGE_luci-app-nlbwmon is not set
+CONFIG_PACKAGE_wrtbwmon=y
+CONFIG_PACKAGE_luci-app-wrtbwmon=y
+# CONFIG_PACKAGE_luci-wrtbwmon is not set
+CONFIG_PACKAGE_iptables-nft=y
+CONFIG_PACKAGE_ip6tables-nft=y
+CONFIG_PACKAGE_xtables-nft=y
 
 # Per-device bandwidth control
 CONFIG_PACKAGE_luci-app-eqosplus=y
@@ -477,7 +498,6 @@ CONFIG_PACKAGE_kmod-fs-f2fs=y
 CONFIG_PACKAGE_f2fs-tools=y
 CONFIG_PACKAGE_f2fsck=y
 CONFIG_PACKAGE_mkf2fs=y
-
 CONFIG_PACKAGE_mount-utils=y
 CONFIG_PACKAGE_smartmontools=y
 
@@ -539,7 +559,6 @@ CONFIG_PACKAGE_kmod-usb-net-cdc-subset=y
 # CONFIG_PACKAGE_luci-app-diskman_INCLUDE_kmod_md_linears is not set
 
 # Still disabled
-# CONFIG_PACKAGE_rpcd-mod-file is not set
 # CONFIG_PACKAGE_luci-app-argon-config is not set
 # CONFIG_PACKAGE_kmod-usb-storage is not set
 # CONFIG_PACKAGE_kmod-usb-storage-uas is not set
@@ -671,31 +690,32 @@ EOF_ARGON
 
 chmod +x files/etc/uci-defaults/02-set-argon-theme
 
-cat > files/etc/uci-defaults/03-disable-lucky-autostart <<'EOF_LUCKY_DISABLE'
+cat > files/etc/uci-defaults/03-enable-lucky <<'EOF_LUCKY_ENABLE'
 #!/bin/sh
 
-logger -t disable-lucky-autostart "disable lucky autostart for F50 hardboot test"
+logger -t enable-lucky "enable lucky autostart"
+
+uci -q set lucky.lucky.enabled='1'
+uci -q commit lucky
 
 if [ -x /etc/init.d/lucky ]; then
-    /etc/init.d/lucky stop 2>/dev/null || true
-    /etc/init.d/lucky disable 2>/dev/null || true
+    /etc/init.d/lucky enable 2>/dev/null || true
+    /etc/init.d/lucky restart 2>/dev/null || true
 fi
 
-rm -f /etc/rc.d/S*lucky /etc/rc.d/K*lucky 2>/dev/null || true
-
-logger -t disable-lucky-autostart "done"
+logger -t enable-lucky "done"
 exit 0
-EOF_LUCKY_DISABLE
+EOF_LUCKY_ENABLE
 
-chmod +x files/etc/uci-defaults/03-disable-lucky-autostart
+chmod +x files/etc/uci-defaults/03-enable-lucky
 
 cat > files/etc/uci-defaults/04-config-turboacc <<'EOF_TURBOACC'
 #!/bin/sh
 
-logger -t config-turboacc "configure Turbo ACC no-SFE stable mode"
+logger -t config-turboacc "configure Turbo ACC no-SFE stable mode, keep flow offloading disabled for EQOS Plus"
 
-uci -q set turboacc.config.sw_flow='1'
-uci -q set turboacc.config.hw_flow='1'
+uci -q set turboacc.config.sw_flow='0'
+uci -q set turboacc.config.hw_flow='0'
 uci -q set turboacc.config.sfe_flow='0'
 uci -q set turboacc.config.fullcone_nat='1'
 uci -q set turboacc.config.fullcone6='0'
@@ -703,8 +723,8 @@ uci -q set turboacc.config.hw_wed='0'
 uci -q set turboacc.config.bbr_cca='1'
 uci -q commit turboacc
 
-uci -q set firewall.@defaults[0].flow_offloading='1'
-uci -q set firewall.@defaults[0].flow_offloading_hw='1'
+uci -q set firewall.@defaults[0].flow_offloading='0'
+uci -q set firewall.@defaults[0].flow_offloading_hw='0'
 uci -q commit firewall
 
 /etc/init.d/firewall restart 2>/dev/null || true
