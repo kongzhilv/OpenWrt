@@ -1,0 +1,47 @@
+#!/bin/sh
+
+logger -t netdata-zh "apply netdata chinese text overlay"
+
+WEB="/usr/share/netdata/web"
+[ -d "$WEB" ] || exit 0
+
+find "$WEB" -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' \) -exec sed -i \
+    -e 's/System Overview/系统概览/g' \
+    -e 's/Dashboard/仪表盘/g' \
+    -e 's/Overview/概览/g' \
+    -e 's/Charts/图表/g' \
+    -e 's/Alarms/告警/g' \
+    -e 's/Alerts/告警/g' \
+    -e 's/Settings/设置/g' \
+    -e 's/Search/搜索/g' \
+    -e 's/Network/网络/g' \
+    -e 's/Networking/网络/g' \
+    -e 's/Memory/内存/g' \
+    -e 's/Disks/磁盘/g' \
+    -e 's/Disk/磁盘/g' \
+    -e 's/CPU/处理器/g' \
+    -e 's/Processes/进程/g' \
+    -e 's/Applications/应用/g' \
+    -e 's/Services/服务/g' \
+    -e 's/Bandwidth/带宽/g' \
+    -e 's/Traffic/流量/g' \
+    -e 's/Received/接收/g' \
+    -e 's/Sent/发送/g' \
+    -e 's/Download/下载/g' \
+    -e 's/Upload/上传/g' \
+    -e 's/Packets/数据包/g' \
+    -e 's/Errors/错误/g' \
+    -e 's/Drops/丢包/g' \
+    -e 's/Temperature/温度/g' \
+    -e 's/Health/健康状态/g' \
+    -e 's/Warning/警告/g' \
+    -e 's/Critical/严重/g' \
+    -e 's/Update/更新/g' \
+    -e 's/Refresh/刷新/g' \
+    -e 's/Live/实时/g' \
+    {} \; 2>/dev/null
+
+/etc/init.d/netdata restart 2>/dev/null || true
+
+logger -t netdata-zh "done"
+exit 0
