@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-echo "===== Patch EQOS Plus: IP/MAC UI choices and IPv6/L2 filters ====="
+echo "===== Patch EQOS Plus: clean IP/MAC UI choices and IPv6/L2 filters ====="
 
 python3 - <<'PY_EQOSPLUS_PATCH'
 from pathlib import Path
@@ -69,14 +69,21 @@ ui_changed = False
 old_ui_field = '''ip = t:option(Value, "mac", translate("IP/MAC"))
 ip.size = 8
 '''
-new_ui_field = '''ip = t:option(Value, "mac", translate("Device IP/MAC"), translate("Select either IP or MAC. MAC is recommended for IPv6 and DHCP address changes; IP/CIDR is still supported."))
+old_ui_field2 = '''ip = t:option(Value, "mac", translate("Device IP/MAC"), translate("Select either IP or MAC. MAC is recommended for IPv6 and DHCP address changes; IP/CIDR is still supported."))
 ip.size = 22
+'''
+new_ui_field = '''ip = t:option(Value, "mac", translate("Device IP/MAC"), translate("Each device has two choices: limit by IP or limit by MAC. MAC is recommended for IPv6 and DHCP address changes."))
+ip.size = 32
 '''
 
 if old_ui_field in u:
     u = u.replace(old_ui_field, new_ui_field)
     ui_changed = True
     print("patched UI field label/description")
+elif old_ui_field2 in u:
+    u = u.replace(old_ui_field2, new_ui_field)
+    ui_changed = True
+    print("updated UI field label/description")
 elif new_ui_field in u:
     print("UI field label/description already patched")
 else:
@@ -86,34 +93,48 @@ old_ui_value = '''for _, dev in ipairs(devices) do
     ip:value(dev.ip, dev.display)
 end
 '''
-new_ui_value = '''for _, dev in ipairs(devices) do
+old_mac_only_value = '''for _, dev in ipairs(devices) do
+    -- Save the MAC address instead of IPv4, so IPv6 and DHCP address changes remain limited.
+    ip:value(dev.mac, dev.display)
+end
+'''
+old_ipmac_value = '''for _, dev in ipairs(devices) do
     -- Offer both choices explicitly: IP is useful for IP/CIDR rules, MAC is better for IPv6 and DHCP changes.
     ip:value(dev.ip, "[IP] " .. dev.display)
     ip:value(dev.mac, "[MAC] " .. dev.display)
 end
 '''
-old_mac_only_value = '''for _, dev in ipairs(devices) do
-    -- Save the MAC address instead of IPv4, so IPv6 and DHCP address changes remain limited.
-    ip:value(dev.mac, dev.display)
+new_ui_value = '''for _, dev in ipairs(devices) do
+    -- Keep one device visually grouped by putting hostname first, then the selected limit mode.
+    local name = dev.hostname
+    if not name or name == "" or name == "unknown" then
+        name = "Unknown device"
+    end
+    ip:value(dev.ip, string.format("%s  |  按IP限速  |  IP %s  |  MAC %s", name, dev.ip, dev.mac))
+    ip:value(dev.mac, string.format("%s  |  按MAC限速 |  MAC %s  |  IP %s", name, dev.mac, dev.ip))
 end
 '''
 
 if old_ui_value in u:
     u = u.replace(old_ui_value, new_ui_value)
     ui_changed = True
-    print("patched UI device choices to offer IP and MAC")
+    print("patched UI device choices to clean IP/MAC labels")
 elif old_mac_only_value in u:
     u = u.replace(old_mac_only_value, new_ui_value)
     ui_changed = True
-    print("patched UI MAC-only choices to offer IP and MAC")
+    print("patched UI MAC-only choices to clean IP/MAC labels")
+elif old_ipmac_value in u:
+    u = u.replace(old_ipmac_value, new_ui_value)
+    ui_changed = True
+    print("updated UI IP/MAC choices to clean labels")
 elif new_ui_value in u:
-    print("UI device choices already offer IP and MAC")
+    print("UI device choices already use clean IP/MAC labels")
 else:
     raise SystemExit("ERROR: EQOS Plus UI device value block not found; upstream changed")
 
 if ui_changed:
     ui_path.write_text(u, encoding="utf-8")
-    print("EQOS Plus UI patched to select/save either IP or MAC")
+    print("EQOS Plus UI patched to cleanly select/save either IP or MAC")
 else:
     print("EQOS Plus UI already patched")
 PY_EQOSPLUS_PATCH
