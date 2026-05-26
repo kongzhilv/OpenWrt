@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-echo "===== Patch EQOS Plus: MAC UI choice and IPv6/L2 filters ====="
+echo "===== Patch EQOS Plus: IP/MAC UI choices and IPv6/L2 filters ====="
 
 python3 - <<'PY_EQOSPLUS_PATCH'
 from pathlib import Path
@@ -69,8 +69,8 @@ ui_changed = False
 old_ui_field = '''ip = t:option(Value, "mac", translate("IP/MAC"))
 ip.size = 8
 '''
-new_ui_field = '''ip = t:option(Value, "mac", translate("Device MAC/IP"), translate("Select a device to save its MAC address. Manual IP or CIDR input is still supported."))
-ip.size = 18
+new_ui_field = '''ip = t:option(Value, "mac", translate("Device IP/MAC"), translate("Select either IP or MAC. MAC is recommended for IPv6 and DHCP address changes; IP/CIDR is still supported."))
+ip.size = 22
 '''
 
 if old_ui_field in u:
@@ -87,6 +87,12 @@ old_ui_value = '''for _, dev in ipairs(devices) do
 end
 '''
 new_ui_value = '''for _, dev in ipairs(devices) do
+    -- Offer both choices explicitly: IP is useful for IP/CIDR rules, MAC is better for IPv6 and DHCP changes.
+    ip:value(dev.ip, "[IP] " .. dev.display)
+    ip:value(dev.mac, "[MAC] " .. dev.display)
+end
+'''
+old_mac_only_value = '''for _, dev in ipairs(devices) do
     -- Save the MAC address instead of IPv4, so IPv6 and DHCP address changes remain limited.
     ip:value(dev.mac, dev.display)
 end
@@ -95,15 +101,19 @@ end
 if old_ui_value in u:
     u = u.replace(old_ui_value, new_ui_value)
     ui_changed = True
-    print("patched UI device choices to save MAC")
+    print("patched UI device choices to offer IP and MAC")
+elif old_mac_only_value in u:
+    u = u.replace(old_mac_only_value, new_ui_value)
+    ui_changed = True
+    print("patched UI MAC-only choices to offer IP and MAC")
 elif new_ui_value in u:
-    print("UI device choices already save MAC")
+    print("UI device choices already offer IP and MAC")
 else:
     raise SystemExit("ERROR: EQOS Plus UI device value block not found; upstream changed")
 
 if ui_changed:
     ui_path.write_text(u, encoding="utf-8")
-    print("EQOS Plus UI patched to select/save MAC")
+    print("EQOS Plus UI patched to select/save either IP or MAC")
 else:
     print("EQOS Plus UI already patched")
 PY_EQOSPLUS_PATCH
