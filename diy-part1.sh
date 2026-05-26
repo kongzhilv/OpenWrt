@@ -88,10 +88,10 @@ if [ ! -f package/luci-app-eqosplus/Makefile ]; then
   exit 1
 fi
 
-if [ -x scripts/patches/patch-eqosplus-mac-ipv6.sh ]; then
-  scripts/patches/patch-eqosplus-mac-ipv6.sh
+if [ -f scripts/patches/patch-eqosplus-mac-ipv6.sh ]; then
+  sh scripts/patches/patch-eqosplus-mac-ipv6.sh
 else
-  echo "ERROR: scripts/patches/patch-eqosplus-mac-ipv6.sh missing or not executable"
+  echo "ERROR: scripts/patches/patch-eqosplus-mac-ipv6.sh missing"
   exit 1
 fi
 
