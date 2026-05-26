@@ -123,17 +123,17 @@
     }
   }
 
-  function run() {
+  function runOnce() {
     if (!document.body) return;
     walk(document.body);
     document.title = translateString(document.title || 'Netdata') || document.title;
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', run);
+    document.addEventListener('DOMContentLoaded', function () {
+      window.setTimeout(runOnce, 1000);
+    });
   } else {
-    run();
+    window.setTimeout(runOnce, 1000);
   }
-
-  window.setInterval(run, 1200);
 })();
