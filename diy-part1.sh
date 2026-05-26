@@ -88,10 +88,17 @@ if [ ! -f package/luci-app-eqosplus/Makefile ]; then
   exit 1
 fi
 
-if [ -f scripts/patches/patch-eqosplus-mac-ipv6.sh ]; then
+EQOS_PATCH="${GITHUB_WORKSPACE:-}/scripts/patches/patch-eqosplus-mac-ipv6.sh"
+if [ -n "${GITHUB_WORKSPACE:-}" ] && [ -f "$EQOS_PATCH" ]; then
+  sh "$EQOS_PATCH"
+elif [ -f scripts/patches/patch-eqosplus-mac-ipv6.sh ]; then
   sh scripts/patches/patch-eqosplus-mac-ipv6.sh
 else
-  echo "ERROR: scripts/patches/patch-eqosplus-mac-ipv6.sh missing"
+  echo "ERROR: patch-eqosplus-mac-ipv6.sh missing"
+  echo "Current directory: $(pwd)"
+  echo "GITHUB_WORKSPACE: ${GITHUB_WORKSPACE:-unset}"
+  find . -maxdepth 4 -path '*patch-eqosplus-mac-ipv6.sh' -print || true
+  [ -n "${GITHUB_WORKSPACE:-}" ] && find "$GITHUB_WORKSPACE" -maxdepth 4 -path '*patch-eqosplus-mac-ipv6.sh' -print || true
   exit 1
 fi
 
