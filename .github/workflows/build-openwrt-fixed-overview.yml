@@ -1,4 +1,4 @@
-name: Build OpenWrt F50 Temp Wrtbwmon
+name: Build OpenWrt Netdata EQOS
 
 on:
   workflow_dispatch:
@@ -29,7 +29,7 @@ env:
 
 jobs:
   build:
-    name: build-f50-temp-wrtbwmon
+    name: build-netdata-eqos
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
@@ -48,9 +48,13 @@ jobs:
           test -f "$DIY_P1_SH"
           test -f "$DIY_P2_SH"
           test -f "$DIY_P3_SH"
-          test -f files/www/luci-static/resources/view/status/include/10_system.js
-          test -f files/usr/share/rpcd/acl.d/luci-overview-extra.json
-          test ! -f files/www/luci-static/resources/view/status/include/15_realtime_speed.js
+          test -f scripts/patches/patch-eqosplus-mac-ipv6.sh
+          test -f files/etc/uci-defaults/01-enable-wifi
+          test -f files/etc/uci-defaults/02-set-argon-theme
+          test -f files/etc/uci-defaults/10-network-accel-defaults
+          test -f files/etc/uci-defaults/20-enable-netdata
+          test -f files/etc/uci-defaults/21-app-service-defaults
+          test -f files/etc/uci-defaults/30-netdata-zh
 
       - name: Free disk space
         timeout-minutes: 15
@@ -106,22 +110,28 @@ jobs:
 
           cp -f .config "$GITHUB_WORKSPACE/logs/07_final.config"
 
-          echo "===== Selected traffic / turbo / wrtbwmon config ====="
-          grep -E 'CONFIG_PACKAGE_(rpcd-mod-file|nlbwmon|luci-app-nlbwmon|wrtbwmon|luci-app-wrtbwmon|iptables-nft|ip6tables-nft|xtables-nft|luci-app-eqosplus|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone)' .config || true
+          echo "===== Selected monitor / turbo / eqos config ====="
+          grep -E 'CONFIG_PACKAGE_(rpcd-mod-file|netdata|wrtbwmon|luci-app-wrtbwmon|iptables-nft|ip6tables-nft|xtables-nft|luci-app-eqosplus|luci-app-turboacc|kmod-nft-offload|kmod-tcp-bbr|kmod-nft-fullcone)' .config || true
 
-          grep -q '^CONFIG_PACKAGE_wrtbwmon=y' .config
-          grep -q '^CONFIG_PACKAGE_luci-app-wrtbwmon=y' .config
+          grep -q '^CONFIG_PACKAGE_netdata=y' .config
+          grep -q '^CONFIG_PACKAGE_luci-app-eqosplus=y' .config
           grep -q '^CONFIG_PACKAGE_iptables-nft=y' .config
           grep -q '^CONFIG_PACKAGE_ip6tables-nft=y' .config
           grep -q '^CONFIG_PACKAGE_xtables-nft=y' .config
+          ! grep -q '^CONFIG_PACKAGE_wrtbwmon=y' .config
+          ! grep -q '^CONFIG_PACKAGE_luci-app-wrtbwmon=y' .config
           ! grep -q '^CONFIG_PACKAGE_luci-wrtbwmon=y' .config
+          ! grep -q '^CONFIG_PACKAGE_kmod-nft-offload=y' .config
 
           echo "===== Embedded files ====="
           find files -type f | sort
 
-          grep -q "fs.trimmed(path)" files/www/luci-static/resources/view/status/include/10_system.js
-          grep -q "温度" files/www/luci-static/resources/view/status/include/10_system.js
-          test ! -f files/www/luci-static/resources/view/status/include/15_realtime_speed.js
+          test -f files/etc/uci-defaults/10-network-accel-defaults
+          test -f files/etc/uci-defaults/20-enable-netdata
+          test -f files/etc/uci-defaults/30-netdata-zh
+          grep -q "flow_offloading='0'" files/etc/uci-defaults/10-network-accel-defaults
+          grep -q "localize netdata static web assets" files/etc/uci-defaults/30-netdata-zh
+          grep -q "系统概览" files/etc/uci-defaults/30-netdata-zh
 
       - name: Download sources
         run: |
@@ -157,7 +167,7 @@ jobs:
         if: ${{ always() && env.UPLOAD_FIRMWARE == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt_Firmware_Temp_Wrtbwmon_${{ github.run_number }}
+          name: OpenWrt_Firmware_Netdata_EQOS_${{ github.run_number }}
           path: release-files/**
           if-no-files-found: warn
           retention-days: 14
@@ -167,7 +177,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt_Temp_Wrtbwmon_Diagnostics_${{ github.run_number }}
+          name: OpenWrt_Netdata_EQOS_Diagnostics_${{ github.run_number }}
           path: |
             logs/**
             release-files/**
@@ -178,7 +188,7 @@ jobs:
       - name: Generate release tag
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
         run: |
-          echo "RELEASE_TAG=OpenWrt_F50_Temp_Wrtbwmon_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=OpenWrt_Netdata_EQOS_$(date +'%Y%m%d_%H%M%S')" >> "$GITHUB_ENV"
 
       - name: Publish GitHub release
         if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
@@ -187,15 +197,13 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}
           body: |
-            RAX3000M F50 build with fixed Chinese LuCI overview temperature and package-provided realtime traffic monitor.
+            RAX3000M build with EQOS Plus MAC IPv6/L2 limit fix and Netdata realtime monitor.
 
             Changes:
-            - LuCI overview temperature uses fs.trimmed() / ubus file read instead of cgi-download.
-            - Temperature label is Chinese: 温度.
-            - Realtime upload/download is provided by wrtbwmon + luci-app-wrtbwmon under Network -> Traffic status.
-            - Keeps nlbwmon for cumulative traffic statistics.
-            - Uses iptables-nft / ip6tables-nft compatibility for OpenWrt 25.12 firewall4/nftables.
-            - Disables flow offloading for wrtbwmon accuracy.
+            - EQOS Plus MAC download filter uses protocol all for IPv6/L2 traffic.
+            - Netdata replaces wrtbwmon for realtime monitoring.
+            - Netdata static web assets are localized by files/etc/uci-defaults/30-netdata-zh.
+            - Flow offloading is disabled for tc/eqos accuracy.
           files: release-files/*
           draft: false
           prerelease: false
