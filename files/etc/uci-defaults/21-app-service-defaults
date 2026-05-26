@@ -1,0 +1,14 @@
+#!/bin/sh
+
+logger -t app-service-defaults "set bundled service defaults"
+
+uci -q set lucky.lucky.enabled='1'
+uci -q commit lucky
+
+if [ -x /etc/init.d/lucky ]; then
+    /etc/init.d/lucky enable 2>/dev/null || true
+    /etc/init.d/lucky restart 2>/dev/null || true
+fi
+
+logger -t app-service-defaults "done"
+exit 0
