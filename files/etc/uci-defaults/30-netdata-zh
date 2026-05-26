@@ -1,30 +1,13 @@
 #!/bin/sh
 
-logger -t netdata-zh "apply deep netdata chinese overlay"
+logger -t netdata-zh "localize netdata static web assets"
 
 WEB="/usr/share/netdata/web"
-JS="$WEB/netdata-zh-cn.js"
 [ -d "$WEB" ] || exit 0
 
-if [ -f "$JS" ]; then
-    A='<'
-    B='script src="/netdata-zh-cn.js"'
-    C='>'
-    D='</'
-    E='script'
-    F='>'
-    TAG="${A}${B}${C}${D}${E}${F}"
-    END="${A}/body${C}"
-
-    for f in "$WEB"/index.html "$WEB"/dashboard.html "$WEB"/*.html; do
-        [ -f "$f" ] || continue
-        grep -q "netdata-zh-cn.js" "$f" && continue
-        tmp="$f.tmp.zh"
-        awk -v tag="$TAG" -v end="$END" 'index($0,end){sub(end,tag end)} {print}' "$f" > "$tmp" && mv "$tmp" "$f"
-    done
-fi
-
-find "$WEB" -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' \) -exec sed -i \
+# Translate Netdata static web assets once after first boot.
+# This changes the shipped html/js/css text directly, so async views read localized assets too.
+find "$WEB" -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' -o -name '*.json' \) -exec sed -i \
     -e 's/System Overview/系统概览/g' \
     -e 's/Dashboard/仪表盘/g' \
     -e 's/Overview/概览/g' \
@@ -34,6 +17,9 @@ find "$WEB" -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' \) -exec 
     -e 's/Alerts/告警/g' \
     -e 's/Settings/设置/g' \
     -e 's/Search/搜索/g' \
+    -e 's/Nodes/节点/g' \
+    -e 's/Metrics/指标/g' \
+    -e 's/System/系统/g' \
     -e 's/Network/网络/g' \
     -e 's/Networking/网络/g' \
     -e 's/Memory/内存/g' \
@@ -47,6 +33,8 @@ find "$WEB" -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' \) -exec 
     -e 's/Traffic/流量/g' \
     -e 's/Received/接收/g' \
     -e 's/Sent/发送/g' \
+    -e 's/Inbound/入站/g' \
+    -e 's/Outbound/出站/g' \
     -e 's/Download/下载/g' \
     -e 's/Upload/上传/g' \
     -e 's/Packets/数据包/g' \
@@ -59,6 +47,14 @@ find "$WEB" -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' \) -exec 
     -e 's/Update/更新/g' \
     -e 's/Refresh/刷新/g' \
     -e 's/Live/实时/g' \
+    -e 's/Storage/存储/g' \
+    -e 's/Filesystem/文件系统/g' \
+    -e 's/Filesystems/文件系统/g' \
+    -e 's/Connections/连接/g' \
+    -e 's/Sockets/套接字/g' \
+    -e 's/Firewall/防火墙/g' \
+    -e 's/Uptime/运行时间/g' \
+    -e 's/Load/负载/g' \
     {} \; 2>/dev/null
 
 /etc/init.d/netdata restart 2>/dev/null || true
