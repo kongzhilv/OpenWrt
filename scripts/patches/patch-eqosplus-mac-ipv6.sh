@@ -1,16 +1,20 @@
 #!/bin/sh
 set -eu
 
-echo "===== Patch EQOS Plus MAC filters: support IPv6/L2 traffic ====="
+echo "===== Patch EQOS Plus: MAC UI choice and IPv6/L2 filters ====="
 
 python3 - <<'PY_EQOSPLUS_PATCH'
 from pathlib import Path
 
-p = Path("package/luci-app-eqosplus/root/usr/bin/eqosplus")
-if not p.exists():
-    raise SystemExit("ERROR: package/luci-app-eqosplus/root/usr/bin/eqosplus not found")
+script_path = Path("package/luci-app-eqosplus/root/usr/bin/eqosplus")
+ui_path = Path("package/luci-app-eqosplus/luasrc/model/cbi/eqosplus.lua")
 
-s = p.read_text(encoding="utf-8")
+if not script_path.exists():
+    raise SystemExit("ERROR: package/luci-app-eqosplus/root/usr/bin/eqosplus not found")
+if not ui_path.exists():
+    raise SystemExit("ERROR: package/luci-app-eqosplus/luasrc/model/cbi/eqosplus.lua not found")
+
+s = script_path.read_text(encoding="utf-8")
 changed = False
 
 old_down = '''        $tc filter add dev ${dev} parent 1: protocol ip prio $id u32 \\
@@ -54,8 +58,52 @@ else:
     raise SystemExit("ERROR: EQOS Plus old MAC upload filter block not found; upstream changed")
 
 if changed:
-    p.write_text(s, encoding="utf-8")
+    script_path.write_text(s, encoding="utf-8")
     print("EQOS Plus MAC filters patched")
 else:
     print("EQOS Plus MAC filters already patched")
+
+u = ui_path.read_text(encoding="utf-8")
+ui_changed = False
+
+old_ui_field = '''ip = t:option(Value, "mac", translate("IP/MAC"))
+ip.size = 8
+'''
+new_ui_field = '''ip = t:option(Value, "mac", translate("Device MAC/IP"), translate("Select a device to save its MAC address. Manual IP or CIDR input is still supported."))
+ip.size = 18
+'''
+
+if old_ui_field in u:
+    u = u.replace(old_ui_field, new_ui_field)
+    ui_changed = True
+    print("patched UI field label/description")
+elif new_ui_field in u:
+    print("UI field label/description already patched")
+else:
+    raise SystemExit("ERROR: EQOS Plus UI IP/MAC field block not found; upstream changed")
+
+old_ui_value = '''for _, dev in ipairs(devices) do
+    ip:value(dev.ip, dev.display)
+end
+'''
+new_ui_value = '''for _, dev in ipairs(devices) do
+    -- Save the MAC address instead of IPv4, so IPv6 and DHCP address changes remain limited.
+    ip:value(dev.mac, dev.display)
+end
+'''
+
+if old_ui_value in u:
+    u = u.replace(old_ui_value, new_ui_value)
+    ui_changed = True
+    print("patched UI device choices to save MAC")
+elif new_ui_value in u:
+    print("UI device choices already save MAC")
+else:
+    raise SystemExit("ERROR: EQOS Plus UI device value block not found; upstream changed")
+
+if ui_changed:
+    ui_path.write_text(u, encoding="utf-8")
+    print("EQOS Plus UI patched to select/save MAC")
+else:
+    print("EQOS Plus UI already patched")
 PY_EQOSPLUS_PATCH
