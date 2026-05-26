@@ -1,0 +1,11 @@
+#!/bin/sh
+
+logger -t set-argon-theme "set LuCI Argon theme"
+
+uci -q set luci.main.mediaurlbase='/luci-static/argon'
+uci -q commit luci
+
+/etc/init.d/uhttpd restart 2>/dev/null || true
+
+logger -t set-argon-theme "done"
+exit 0
