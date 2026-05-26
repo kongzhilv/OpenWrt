@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part3: copy repository files overlay, LuCI Chinese temperature and wrtbwmon ====="
+echo "===== DIY part3: copy repository files overlay and enforce Netdata/EQOS config ====="
 
 if [ ! -d "$GITHUB_WORKSPACE/files" ]; then
   echo "ERROR: repository files overlay missing: $GITHUB_WORKSPACE/files"
@@ -12,22 +12,25 @@ echo "===== Force required configs after diy-part2 rewrites .config ====="
 
 for key in \
   CONFIG_PACKAGE_rpcd-mod-file \
-  CONFIG_PACKAGE_wrtbwmon \
-  CONFIG_PACKAGE_luci-app-wrtbwmon \
+  CONFIG_PACKAGE_netdata \
   CONFIG_PACKAGE_ip-full \
   CONFIG_PACKAGE_iptables-nft \
   CONFIG_PACKAGE_ip6tables-nft \
-  CONFIG_PACKAGE_xtables-nft
+  CONFIG_PACKAGE_xtables-nft \
+  CONFIG_PACKAGE_luci-app-eqosplus \
+  CONFIG_PACKAGE_kmod-ifb \
+  CONFIG_PACKAGE_tc-tiny \
+  CONFIG_PACKAGE_bc
 do
   sed -i "/^# ${key} is not set/d" .config || true
   sed -i "/^${key}=/d" .config || true
   echo "${key}=y" >> .config
 done
 
-# Do not build the old Kiougar package.
-# It conflicts with wrtbwmon on /etc/config/wrtbwmon under OpenWrt 25.12 apk rootfs install.
-# Disable flow offloading because luci-app-wrtbwmon documents it as incompatible.
+# Remove the old wrtbwmon monitor stack and flow offloading.
 for key in \
+  CONFIG_PACKAGE_wrtbwmon \
+  CONFIG_PACKAGE_luci-app-wrtbwmon \
   CONFIG_PACKAGE_luci-wrtbwmon \
   CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING \
   CONFIG_PACKAGE_kmod-nft-offload
@@ -37,38 +40,37 @@ do
   echo "# ${key} is not set" >> .config
 done
 
+echo "===== Copy repository files overlay ====="
 mkdir -p files
 cp -a "$GITHUB_WORKSPACE/files/." files/
 
-chmod +x files/etc/uci-defaults/01-enable-wifi 2>/dev/null || true
-chmod +x files/etc/uci-defaults/02-set-argon-theme 2>/dev/null || true
-chmod +x files/etc/uci-defaults/03-disable-lucky-autostart 2>/dev/null || true
-chmod +x files/etc/uci-defaults/04-config-turboacc 2>/dev/null || true
-chmod +x files/etc/uci-defaults/05-enable-wrtbwmon 2>/dev/null || true
+chmod +x files/etc/uci-defaults/* 2>/dev/null || true
 
 echo "===== Overlay files after copy ====="
 find files -type f | sort
 
-echo "===== Validate temperature overview files ====="
-test -f files/www/luci-static/resources/view/status/include/10_system.js
-grep -q "fs.trimmed(path)" files/www/luci-static/resources/view/status/include/10_system.js
-! grep -q "fs.read_direct(path)" files/www/luci-static/resources/view/status/include/10_system.js
-grep -q "温度" files/www/luci-static/resources/view/status/include/10_system.js
+echo "===== Validate overlay defaults ====="
+test -f files/etc/uci-defaults/01-enable-wifi
+test -f files/etc/uci-defaults/02-set-argon-theme
+test -f files/etc/uci-defaults/10-network-accel-defaults
+test -f files/etc/uci-defaults/20-enable-netdata
+test -f files/etc/uci-defaults/21-app-service-defaults
+test -f files/etc/uci-defaults/30-netdata-zh
 
-echo "===== Validate LuCI temperature ACL ====="
-test -f files/usr/share/rpcd/acl.d/luci-overview-extra.json
-grep -q "thermal_zone" files/usr/share/rpcd/acl.d/luci-overview-extra.json
-! grep -q "rx_bytes" files/usr/share/rpcd/acl.d/luci-overview-extra.json
-! grep -q "tx_bytes" files/usr/share/rpcd/acl.d/luci-overview-extra.json
+grep -q "flow_offloading='0'" files/etc/uci-defaults/10-network-accel-defaults
+grep -q "netdata" files/etc/uci-defaults/20-enable-netdata
+grep -q "localize netdata static web assets" files/etc/uci-defaults/30-netdata-zh
+grep -q "系统概览" files/etc/uci-defaults/30-netdata-zh
 
-echo "===== Validate wrtbwmon package tree and config ====="
-test -f package/wrtbwmon/Makefile
-test -f package/luci-app-wrtbwmon/Makefile
-grep -q "^CONFIG_PACKAGE_wrtbwmon=y" .config
-grep -q "^CONFIG_PACKAGE_luci-app-wrtbwmon=y" .config
+echo "===== Validate selected config ====="
+grep -q "^CONFIG_PACKAGE_netdata=y" .config
+grep -q "^CONFIG_PACKAGE_luci-app-eqosplus=y" .config
 grep -q "^CONFIG_PACKAGE_iptables-nft=y" .config
 grep -q "^CONFIG_PACKAGE_ip6tables-nft=y" .config
 grep -q "^CONFIG_PACKAGE_xtables-nft=y" .config
+! grep -q "^CONFIG_PACKAGE_wrtbwmon=y" .config
+! grep -q "^CONFIG_PACKAGE_luci-app-wrtbwmon=y" .config
 ! grep -q "^CONFIG_PACKAGE_luci-wrtbwmon=y" .config
+! grep -q "^CONFIG_PACKAGE_kmod-nft-offload=y" .config
 
 echo "===== DIY part3 done ====="
