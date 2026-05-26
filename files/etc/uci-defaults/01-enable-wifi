@@ -1,0 +1,73 @@
+#!/bin/sh
+
+logger -t enable-wifi "start force split SSID"
+
+[ -s /etc/config/wireless ] || wifi config || true
+
+uci show wireless 2>/dev/null | grep -q '=wifi-device' || {
+    logger -t enable-wifi "no wifi-device found, retry next boot"
+    exit 1
+}
+
+for dev in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-device/\1/p"); do
+    uci -q set "${dev}.disabled=0"
+
+    if [ -z "$(uci -q get "${dev}.country" 2>/dev/null)" ]; then
+        uci -q set "${dev}.country=CN"
+    fi
+
+    band="$(uci -q get "${dev}.band" || true)"
+
+    if [ -z "$(uci -q get "${dev}.channel" 2>/dev/null)" ]; then
+        if [ "$band" = "2g" ]; then
+            uci -q set "${dev}.channel=1"
+        elif [ "$band" = "5g" ]; then
+            uci -q set "${dev}.channel=36"
+        fi
+    fi
+
+    if [ -z "$(uci -q get "${dev}.htmode" 2>/dev/null)" ]; then
+        if [ "$band" = "2g" ]; then
+            uci -q set "${dev}.htmode=HE40"
+        elif [ "$band" = "5g" ]; then
+            uci -q set "${dev}.htmode=HE80"
+        fi
+    fi
+done
+
+i=0
+for iface in $(uci show wireless | sed -n "s/^\(wireless\.[^=]*\)=wifi-iface/\1/p"); do
+    uci -q set "${iface}.disabled=0"
+    uci -q set "${iface}.mode=ap"
+
+    if [ -z "$(uci -q get "${iface}.network" 2>/dev/null)" ]; then
+        uci -q set "${iface}.network=lan"
+    fi
+
+    dev="$(uci -q get "${iface}.device" || true)"
+    band="$(uci -q get "wireless.${dev}.band" || true)"
+
+    if [ "$band" = "2g" ]; then
+        uci -q set "${iface}.ssid=OpenWrt_2G"
+    elif [ "$band" = "5g" ]; then
+        uci -q set "${iface}.ssid=OpenWrt_5G"
+    elif [ "$i" = "0" ]; then
+        uci -q set "${iface}.ssid=OpenWrt_2G"
+    elif [ "$i" = "1" ]; then
+        uci -q set "${iface}.ssid=OpenWrt_5G"
+    else
+        uci -q set "${iface}.ssid=OpenWrt_WiFi_$i"
+    fi
+
+    if [ -z "$(uci -q get "${iface}.encryption" 2>/dev/null)" ]; then
+        uci -q set "${iface}.encryption=none"
+    fi
+
+    i=$((i + 1))
+done
+
+uci commit wireless
+wifi reload || wifi || true
+
+logger -t enable-wifi "done force split SSID"
+exit 0
