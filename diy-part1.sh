@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "===== DIY part1: add Argon, Lucky, Turbo ACC no-SFE, EQOS Plus and wrtbwmon ====="
+echo "===== DIY part1: add Argon, Lucky, Turbo ACC no-SFE and EQOS Plus ====="
 
 echo "===== Remove known conflicting third-party feed leftovers from feeds.conf.default ====="
 if [ -f feeds.conf.default ]; then
@@ -88,74 +88,17 @@ if [ ! -f package/luci-app-eqosplus/Makefile ]; then
   exit 1
 fi
 
-echo "===== Patch EQOS Plus MAC download filter: support IPv6/L2 traffic ====="
-python3 - <<'PY_EQOSPLUS_PATCH'
-from pathlib import Path
-
-p = Path("package/luci-app-eqosplus/root/usr/bin/eqosplus")
-s = p.read_text(encoding="utf-8")
-
-old = '''        $tc filter add dev ${dev} parent 1: protocol ip prio $id u32 \\
-            match u16 0x0800 0xFFFF at -2 \\
-            match u32 0x${M1}${M2} 0xFFFFFFFF at -12 \\
-            match u16 0x${M0} 0xFFFF at -14 \\
-            flowid 1:$id'''
-
-new = '''        $tc filter add dev ${dev} parent 1:0 protocol all prio $id u32 \\
-            match u32 0x${M1}${M2} 0xFFFFFFFF at -12 \\
-            match u16 0x${M0} 0xFFFF at -14 \\
-            flowid 1:$id'''
-
-if old not in s:
-    raise SystemExit("ERROR: EQOS Plus MAC download filter block not found; upstream changed")
-
-p.write_text(s.replace(old, new), encoding="utf-8")
-print("EQOS Plus MAC download filter patched")
-PY_EQOSPLUS_PATCH
-
-echo "===== Add wrtbwmon realtime monitor: brvphoenix backend + LuCI ====="
-
-rm -rf package/wrtbwmon package/luci-wrtbwmon package/luci-app-wrtbwmon
-rm -rf /tmp/wrtbwmon-src /tmp/luci-app-wrtbwmon-src
-
-git clone --depth 1 https://github.com/brvphoenix/wrtbwmon.git /tmp/wrtbwmon-src
-
-if [ ! -f /tmp/wrtbwmon-src/wrtbwmon/Makefile ]; then
-  echo "ERROR: wrtbwmon Makefile missing"
-  find /tmp/wrtbwmon-src -maxdepth 5 -type f -name Makefile -print || true
+if [ -x scripts/patches/patch-eqosplus-mac-ipv6.sh ]; then
+  scripts/patches/patch-eqosplus-mac-ipv6.sh
+else
+  echo "ERROR: scripts/patches/patch-eqosplus-mac-ipv6.sh missing or not executable"
   exit 1
 fi
-
-cp -a /tmp/wrtbwmon-src/wrtbwmon package/wrtbwmon
-rm -rf /tmp/wrtbwmon-src
-
-if [ ! -f package/wrtbwmon/Makefile ]; then
-  echo "ERROR: package/wrtbwmon/Makefile missing after copy"
-  exit 1
-fi
-
-# OpenWrt 25.12 uses firewall4/nftables.
-# Force nft-compatible iptables userspace for wrtbwmon.
-sed -i 's/DEPENDS:=+iptables +@BUSYBOX_CONFIG_IP/DEPENDS:=+iptables-nft +ip6tables-nft +xtables-nft +ip-full/g' package/wrtbwmon/Makefile
-sed -i 's/DEPENDS:=+iptables +ip-full/DEPENDS:=+iptables-nft +ip6tables-nft +xtables-nft +ip-full/g' package/wrtbwmon/Makefile
-
-git clone --depth 1 https://github.com/brvphoenix/luci-app-wrtbwmon.git /tmp/luci-app-wrtbwmon-src
-
-if [ ! -f /tmp/luci-app-wrtbwmon-src/luci-app-wrtbwmon/Makefile ]; then
-  echo "ERROR: luci-app-wrtbwmon Makefile missing"
-  find /tmp/luci-app-wrtbwmon-src -maxdepth 5 -type f -name Makefile -print || true
-  exit 1
-fi
-
-cp -a /tmp/luci-app-wrtbwmon-src/luci-app-wrtbwmon package/luci-app-wrtbwmon
-rm -rf /tmp/luci-app-wrtbwmon-src
 
 echo "===== DIY part1 package tree check ====="
 find package/luci-theme-argon -maxdepth 3 -type f -name Makefile -print || true
 find package/lucky -maxdepth 3 -type f -name Makefile -print || true
 find package/turboacc -maxdepth 4 -type f -name Makefile -print || true
 find package/luci-app-eqosplus -maxdepth 4 -type f -name Makefile -print || true
-find package/wrtbwmon -maxdepth 4 -type f -name Makefile -print || true
-find package/luci-app-wrtbwmon -maxdepth 4 -type f -name Makefile -print || true
 
 echo "===== DIY part1 done ====="
