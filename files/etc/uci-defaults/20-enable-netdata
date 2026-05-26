@@ -1,0 +1,11 @@
+#!/bin/sh
+
+logger -t enable-netdata "enable netdata realtime monitor"
+
+if [ -x /etc/init.d/netdata ]; then
+    /etc/init.d/netdata enable 2>/dev/null || true
+    /etc/init.d/netdata restart 2>/dev/null || true
+fi
+
+logger -t enable-netdata "done"
+exit 0
