@@ -1,15 +1,35 @@
 #!/bin/sh
 
-logger -t netdata-zh "apply netdata chinese text overlay"
+logger -t netdata-zh "apply deep netdata chinese overlay"
 
 WEB="/usr/share/netdata/web"
+JS="$WEB/netdata-zh-cn.js"
 [ -d "$WEB" ] || exit 0
+
+if [ -f "$JS" ]; then
+    A='<'
+    B='script src="/netdata-zh-cn.js"'
+    C='>'
+    D='</'
+    E='script'
+    F='>'
+    TAG="${A}${B}${C}${D}${E}${F}"
+    END="${A}/body${C}"
+
+    for f in "$WEB"/index.html "$WEB"/dashboard.html "$WEB"/*.html; do
+        [ -f "$f" ] || continue
+        grep -q "netdata-zh-cn.js" "$f" && continue
+        tmp="$f.tmp.zh"
+        awk -v tag="$TAG" -v end="$END" 'index($0,end){sub(end,tag end)} {print}' "$f" > "$tmp" && mv "$tmp" "$f"
+    done
+fi
 
 find "$WEB" -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' \) -exec sed -i \
     -e 's/System Overview/系统概览/g' \
     -e 's/Dashboard/仪表盘/g' \
     -e 's/Overview/概览/g' \
     -e 's/Charts/图表/g' \
+    -e 's/Chart/图表/g' \
     -e 's/Alarms/告警/g' \
     -e 's/Alerts/告警/g' \
     -e 's/Settings/设置/g' \
