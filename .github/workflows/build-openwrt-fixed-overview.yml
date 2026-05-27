@@ -56,6 +56,7 @@ jobs:
           test -f files/etc/uci-defaults/21-app-service-defaults
           test -f files/etc/uci-defaults/30-netdata-zh
           test -f files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+          test -f files/etc/config/netdata_clients
           test -f files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 
       - name: Free disk space
@@ -132,9 +133,12 @@ jobs:
           test -f files/etc/uci-defaults/20-enable-netdata
           test -f files/etc/uci-defaults/30-netdata-zh
           test -f files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+          test -f files/etc/config/netdata_clients
           test -f files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
           grep -q "flow_offloading='0'" files/etc/uci-defaults/10-network-accel-defaults
           grep -q "skip Netdata static web asset translation" files/etc/uci-defaults/30-netdata-zh
+          grep -q "option update_every '3'" files/etc/config/netdata_clients
+          grep -q "1/3/5/10" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
           grep -q "OpenWrt 客户端下载速率" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
           grep -q "nft add table inet openwrt_clients" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 
@@ -208,6 +212,7 @@ jobs:
             - EQOS Plus MAC download filter uses protocol all for IPv6/L2 traffic.
             - Netdata is kept as the realtime monitor without rewriting upstream web assets.
             - OpenWrt client realtime upload/download charts are provided by files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin.
+            - Netdata client chart refresh is configurable with 1/3/5/10 second choices.
             - Flow offloading is disabled for tc/eqos accuracy.
           files: release-files/*
           draft: false
