@@ -50,10 +50,27 @@ if [ ! -f package/luci-app-eqosplus/Makefile ]; then
     exit 1
 fi
 
-if grep -q "parent 1:0 protocol all" package/luci-app-eqosplus/root/usr/bin/eqosplus; then
+eqos_script="package/luci-app-eqosplus/root/usr/bin/eqosplus"
+eqos_ui="package/luci-app-eqosplus/luasrc/model/cbi/eqosplus.lua"
+
+if grep -q "parent 1:0 protocol all" "$eqos_script"; then
     echo "OK: EQOS Plus MAC IPv6/L2 patch is present"
 else
     echo "ERROR: EQOS Plus MAC IPv6/L2 patch missing"
+    exit 1
+fi
+
+if grep -q "tr '-' ':' | tr 'a-f' 'A-F'" "$eqos_script"; then
+    echo "OK: EQOS Plus MAC normalization patch is present"
+else
+    echo "ERROR: EQOS Plus MAC normalization patch missing"
+    exit 1
+fi
+
+if grep -q "ip:value(dev.ip" "$eqos_ui" && grep -q "ip:value(dev.mac" "$eqos_ui"; then
+    echo "OK: EQOS Plus UI offers both IP and MAC choices"
+else
+    echo "ERROR: EQOS Plus UI IP/MAC dual choices missing"
     exit 1
 fi
 
