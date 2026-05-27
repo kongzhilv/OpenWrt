@@ -1,0 +1,24 @@
+#!/bin/sh
+
+logger -t netdata-openwrt-clients "enable OpenWrt client realtime traffic charts"
+
+PLUGIN="/usr/libexec/netdata/plugins.d/openwrt_clients.plugin"
+
+if [ -f "$PLUGIN" ]; then
+    chmod +x "$PLUGIN" 2>/dev/null || true
+fi
+
+# Prepare the nft table early. The plugin will resync chains/counters dynamically.
+if command -v nft >/dev/null 2>&1; then
+    nft add table inet openwrt_clients 2>/dev/null || true
+    nft add chain inet openwrt_clients forward '{ type filter hook forward priority -250; policy accept; }' 2>/dev/null || true
+fi
+
+# Netdata external plugins in plugins.d are auto-discovered when executable.
+if [ -x /etc/init.d/netdata ]; then
+    /etc/init.d/netdata enable 2>/dev/null || true
+    /etc/init.d/netdata restart 2>/dev/null || true
+fi
+
+logger -t netdata-openwrt-clients "done"
+exit 0
