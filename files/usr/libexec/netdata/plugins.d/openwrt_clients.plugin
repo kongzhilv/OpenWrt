@@ -1,0 +1,177 @@
+#!/bin/sh
+# Netdata external plugin: OpenWrt per-client IPv4 realtime traffic.
+# Data source: nftables named counters in inet/openwrt_clients.
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+TABLE="openwrt_clients"
+CHAIN="forward"
+LAN_DEV="${OPENWRT_CLIENTS_LAN_DEV:-br-lan}"
+RESCAN_EVERY="${OPENWRT_CLIENTS_RESCAN_EVERY:-30}"
+UPDATE_EVERY="${1:-${NETDATA_UPDATE_EVERY:-1}}"
+
+case "$UPDATE_EVERY" in
+    ''|*[!0-9]*) UPDATE_EVERY=1 ;;
+esac
+[ "$UPDATE_EVERY" -lt 1 ] 2>/dev/null && UPDATE_EVERY=1
+
+CACHE_BASE="${NETDATA_CACHE_DIR:-/tmp}/openwrt_clients"
+mkdir -p "$CACHE_BASE" 2>/dev/null || CACHE_BASE="/tmp/openwrt_clients"
+mkdir -p "$CACHE_BASE" 2>/dev/null || exit 1
+
+CLIENTS="$CACHE_BASE/clients"
+COUNTERS="$CACHE_BASE/counters"
+
+log() {
+    echo "openwrt_clients: $*" >&2
+}
+
+need_cmd() {
+    command -v "$1" >/dev/null 2>&1 || {
+        log "missing command: $1"
+        echo "DISABLE"
+        exit 1
+    }
+}
+
+sanitize_id() {
+    echo "$1" | sed 's/[^A-Za-z0-9_]/_/g; s/^_*//; s/_\{2,\}/_/g; s/^/client_/; s/_$//'
+}
+
+sanitize_label() {
+    echo "$1" | sed 's/[^A-Za-z0-9._-]/_/g; s/_\{2,\}/_/g; s/^_*//; s/_*$//' | cut -c1-48
+}
+
+valid_ipv4() {
+    echo "$1" | awk -F. 'NF==4 {for(i=1;i<=4;i++) if($i !~ /^[0-9]+$/ || $i<0 || $i>255) exit 1; exit 0} {exit 1}'
+}
+
+init_nft() {
+    nft add table inet "$TABLE" 2>/dev/null || true
+    nft add chain inet "$TABLE" "$CHAIN" '{ type filter hook forward priority -250; policy accept; }' 2>/dev/null || true
+}
+
+discover_clients() {
+    local tmp="$CACHE_BASE/clients.new"
+    : > "$tmp"
+
+    # Prefer DHCP lease hostnames: expires mac ip hostname clientid.
+    if [ -r /tmp/dhcp.leases ]; then
+        awk '{ if ($3 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) { h=$4; if (h=="" || h=="*") h="unknown"; print $3, $2, h } }' /tmp/dhcp.leases >> "$tmp"
+    fi
+
+    # Add currently visible IPv4 neighbors on LAN; keep existing DHCP names first.
+    ip -4 neigh show dev "$LAN_DEV" 2>/dev/null | awk '
+        $1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ {
+            mac="00:00:00:00:00:00"
+            for (i=1; i<=NF; i++) if ($i=="lladdr" && (i+1)<=NF) mac=$(i+1)
+            print $1, mac, "unknown"
+        }' >> "$tmp"
+
+    awk '!seen[$1]++ {print $1, $2, $3}' "$tmp" > "$CLIENTS"
+}
+
+sync_nft_rules() {
+    init_nft
+    nft flush chain inet "$TABLE" "$CHAIN" 2>/dev/null || true
+
+    while read -r ip mac host; do
+        [ -n "$ip" ] || continue
+        valid_ipv4 "$ip" || continue
+
+        dim="$(sanitize_id "$ip")"
+        up="up_${dim}"
+        down="down_${dim}"
+
+        nft add counter inet "$TABLE" "$up" 2>/dev/null || true
+        nft add counter inet "$TABLE" "$down" 2>/dev/null || true
+
+        nft add rule inet "$TABLE" "$CHAIN" ip saddr "$ip" counter name "$up" 2>/dev/null || true
+        nft add rule inet "$TABLE" "$CHAIN" ip daddr "$ip" counter name "$down" 2>/dev/null || true
+    done < "$CLIENTS"
+}
+
+emit_charts() {
+    echo "CHART openwrt_clients.download '' 'OpenWrt 客户端下载速率' 'bits/s' '客户端流量' openwrt.clients.download line 70000 $UPDATE_EVERY"
+    if [ -s "$CLIENTS" ]; then
+        while read -r ip mac host; do
+            valid_ipv4 "$ip" || continue
+            dim="$(sanitize_id "$ip")"
+            label_host="$(sanitize_label "$host")"
+            [ -n "$label_host" ] || label_host="unknown"
+            echo "DIMENSION $dim '${label_host}_${ip}' incremental 8 1"
+        done < "$CLIENTS"
+    else
+        echo "DIMENSION no_clients '无客户端' absolute 1 1"
+    fi
+
+    echo "CHART openwrt_clients.upload '' 'OpenWrt 客户端上传速率' 'bits/s' '客户端流量' openwrt.clients.upload line 70001 $UPDATE_EVERY"
+    if [ -s "$CLIENTS" ]; then
+        while read -r ip mac host; do
+            valid_ipv4 "$ip" || continue
+            dim="$(sanitize_id "$ip")"
+            label_host="$(sanitize_label "$host")"
+            [ -n "$label_host" ] || label_host="unknown"
+            echo "DIMENSION $dim '${label_host}_${ip}' incremental 8 1"
+        done < "$CLIENTS"
+    else
+        echo "DIMENSION no_clients '无客户端' absolute 1 1"
+    fi
+}
+
+counter_bytes() {
+    local cname="$1"
+    awk -v c="$cname" '
+        $1=="counter" && $2==c {found=1}
+        found {
+            for (i=1; i<=NF; i++) if ($i=="bytes") {print $(i+1); exit}
+            if ($1=="}") found=0
+        }
+    ' "$COUNTERS"
+}
+
+emit_values() {
+    nft list counters table inet "$TABLE" > "$COUNTERS" 2>/dev/null || : > "$COUNTERS"
+
+    echo "BEGIN openwrt_clients.download"
+    if [ -s "$CLIENTS" ]; then
+        while read -r ip mac host; do
+            valid_ipv4 "$ip" || continue
+            dim="$(sanitize_id "$ip")"
+            val="$(counter_bytes "down_${dim}")"
+            echo "SET $dim = ${val:-0}"
+        done < "$CLIENTS"
+    else
+        echo "SET no_clients = 0"
+    fi
+    echo "END"
+
+    echo "BEGIN openwrt_clients.upload"
+    if [ -s "$CLIENTS" ]; then
+        while read -r ip mac host; do
+            valid_ipv4 "$ip" || continue
+            dim="$(sanitize_id "$ip")"
+            val="$(counter_bytes "up_${dim}")"
+            echo "SET $dim = ${val:-0}"
+        done < "$CLIENTS"
+    else
+        echo "SET no_clients = 0"
+    fi
+    echo "END"
+}
+
+need_cmd nft
+need_cmd ip
+
+last_rescan=0
+while :; do
+    now="$(date +%s 2>/dev/null || echo 0)"
+    if [ ! -s "$CLIENTS" ] || [ $((now - last_rescan)) -ge "$RESCAN_EVERY" ]; then
+        discover_clients
+        sync_nft_rules
+        emit_charts
+        last_rescan="$now"
+    fi
+
+    emit_values
+    sleep "$UPDATE_EVERY"
+done
