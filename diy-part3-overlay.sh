@@ -45,6 +45,7 @@ mkdir -p files
 cp -a "$GITHUB_WORKSPACE/files/." files/
 
 chmod +x files/etc/uci-defaults/* 2>/dev/null || true
+chmod +x files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin 2>/dev/null || true
 
 echo "===== Overlay files after copy ====="
 find files -type f | sort
@@ -56,11 +57,15 @@ test -f files/etc/uci-defaults/10-network-accel-defaults
 test -f files/etc/uci-defaults/20-enable-netdata
 test -f files/etc/uci-defaults/21-app-service-defaults
 test -f files/etc/uci-defaults/30-netdata-zh
+test -f files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+test -f files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 
 grep -q "flow_offloading='0'" files/etc/uci-defaults/10-network-accel-defaults
 grep -q "netdata" files/etc/uci-defaults/20-enable-netdata
-grep -q "localize netdata static web assets" files/etc/uci-defaults/30-netdata-zh
-grep -q "系统概览" files/etc/uci-defaults/30-netdata-zh
+grep -q "skip Netdata static web asset translation" files/etc/uci-defaults/30-netdata-zh
+grep -q "openwrt_clients.plugin" files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+grep -q "OpenWrt 客户端下载速率" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+grep -q "nft add table inet openwrt_clients" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 
 echo "===== Validate selected config ====="
 grep -q "^CONFIG_PACKAGE_netdata=y" .config
