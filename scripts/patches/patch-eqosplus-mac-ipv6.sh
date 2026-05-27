@@ -17,26 +17,26 @@ if not ui_path.exists():
 s = script_path.read_text(encoding="utf-8")
 changed = False
 
-old_down = '''        $tc filter add dev ${dev} parent 1: protocol ip prio $id u32 \\
-            match u16 0x0800 0xFFFF at -2 \\
-            match u32 0x${M1}${M2} 0xFFFFFFFF at -12 \\
-            match u16 0x${M0} 0xFFFF at -14 \\
+old_down = '''        $tc filter add dev ${dev} parent 1: protocol ip prio $id u32 \
+            match u16 0x0800 0xFFFF at -2 \
+            match u32 0x${M1}${M2} 0xFFFFFFFF at -12 \
+            match u16 0x${M0} 0xFFFF at -14 \
             flowid 1:$id'''
 
-new_down = '''        $tc filter add dev ${dev} parent 1:0 protocol all prio $id u32 \\
-            match u32 0x${M1}${M2} 0xFFFFFFFF at -12 \\
-            match u16 0x${M0} 0xFFFF at -14 \\
+new_down = '''        $tc filter add dev ${dev} parent 1:0 protocol all prio $id u32 \
+            match u32 0x${M1}${M2} 0xFFFFFFFF at -12 \
+            match u16 0x${M0} 0xFFFF at -14 \
             flowid 1:$id'''
 
-old_up = '''        $tc filter add dev ${dev}_ifb parent 1: protocol ip prio $((id + 100)) u32 \\
-            match u16 0x0800 0xFFFF at -2 \\
-            match u16 0x${M2} 0xFFFF at -4 \\
-            match u32 0x${M0}${M1} 0xFFFFFFFF at -8 \\
+old_up = '''        $tc filter add dev ${dev}_ifb parent 1: protocol ip prio $((id + 100)) u32 \
+            match u16 0x0800 0xFFFF at -2 \
+            match u16 0x${M2} 0xFFFF at -4 \
+            match u32 0x${M0}${M1} 0xFFFFFFFF at -8 \
             flowid 1:$id'''
 
-new_up = '''        $tc filter add dev ${dev}_ifb parent 1:0 protocol all prio $((id + 100)) u32 \\
-            match u16 0x${M2} 0xFFFF at -4 \\
-            match u32 0x${M0}${M1} 0xFFFFFFFF at -8 \\
+new_up = '''        $tc filter add dev ${dev}_ifb parent 1:0 protocol all prio $((id + 100)) u32 \
+            match u16 0x${M2} 0xFFFF at -4 \
+            match u32 0x${M0}${M1} 0xFFFFFFFF at -8 \
             flowid 1:$id'''
 
 if old_down in s:
@@ -119,9 +119,9 @@ ui_changed = False
 
 # Fix dhcp.leases parsing: file format is expires mac ip hostname clientid.
 old_lease_parse = '''                local mac, ip_lease, _, hostname = line:match("^(%S+)%s+(%S+)%s+(%S+)%s+(%S+)")
-                if ip_lease == ip and hostname ~= "*" then'''
+                 if ip_lease == ip and hostname ~= "*" then'''
 new_lease_parse = '''                local _, lease_mac, ip_lease, hostname = line:match("^(%S+)%s+(%S+)%s+(%S+)%s+(%S+)")
-                if ip_lease == ip and hostname ~= "*" then'''
+                 if ip_lease == ip and hostname ~= "*" then'''
 if old_lease_parse in u:
     u = u.replace(old_lease_parse, new_lease_parse)
     ui_changed = True
@@ -152,7 +152,10 @@ ip.size = 22
 old_ui_field3 = '''ip = t:option(Value, "mac", translate("Device IP/MAC"), translate("Each device has two choices: limit by IP or limit by MAC. MAC is recommended for IPv6 and DHCP address changes."))
 ip.size = 32
 '''
-new_ui_field = '''ip = t:option(Value, "mac", translate("Limit target"), translate("Choose by IP or by MAC."))
+old_ui_field4 = '''ip = t:option(Value, "mac", translate("Limit target"), translate("Choose by IP or by MAC."))
+ip.size = 40
+'''
+new_ui_field = '''ip = t:option(Value, "mac", translate("Limit target"), translate("IP only matches IPv4; MAC matches IPv4/IPv6."))
 ip.size = 40
 '''
 
@@ -168,6 +171,10 @@ elif old_ui_field3 in u:
     u = u.replace(old_ui_field3, new_ui_field)
     ui_changed = True
     print("shortened UI field label/description")
+elif old_ui_field4 in u:
+    u = u.replace(old_ui_field4, new_ui_field)
+    ui_changed = True
+    print("updated UI field description")
 elif new_ui_field in u:
     print("UI field label/description already patched")
 else:
@@ -198,7 +205,7 @@ old_clean_value = '''for _, dev in ipairs(devices) do
     ip:value(dev.mac, string.format("%s  |  按MAC限速 |  MAC %s  |  IP %s", name, dev.mac, dev.ip))
 end
 '''
-new_ui_value = '''for _, dev in ipairs(devices) do
+old_compact_value = '''for _, dev in ipairs(devices) do
     local name = dev.hostname
     if not name or name == "" or name == "unknown" then
         name = "Unknown device"
@@ -208,30 +215,47 @@ new_ui_value = '''for _, dev in ipairs(devices) do
     ip:value(dev.mac, string.format("%s  ->  MAC %s", base, dev.mac))
 end
 '''
+new_ui_value = '''for _, dev in ipairs(devices) do
+    local name = dev.hostname
+    if not name or name == "" or name == "unknown" then
+        name = "Unknown device"
+    end
+    ip:value(dev.ip, string.format("IP  %s  %s", dev.ip, name))
+    ip:value(dev.mac, string.format("MAC %s  %s", dev.mac, name))
+end
+'''
 
 if old_ui_value in u:
     u = u.replace(old_ui_value, new_ui_value)
     ui_changed = True
-    print("patched UI device choices to compact IP/MAC labels")
+    print("patched UI device choices to short IP/MAC labels")
 elif old_mac_only_value in u:
     u = u.replace(old_mac_only_value, new_ui_value)
     ui_changed = True
-    print("patched UI MAC-only choices to compact IP/MAC labels")
+    print("patched UI MAC-only choices to short IP/MAC labels")
 elif old_ipmac_value in u:
     u = u.replace(old_ipmac_value, new_ui_value)
     ui_changed = True
-    print("updated UI IP/MAC choices to compact labels")
+    print("updated UI IP/MAC choices to short labels")
 elif old_clean_value in u:
     u = u.replace(old_clean_value, new_ui_value)
     ui_changed = True
-    print("updated UI clean labels to compact labels")
+    print("updated UI clean labels to short labels")
+elif old_compact_value in u:
+    u = u.replace(old_compact_value, new_ui_value)
+    ui_changed = True
+    print("updated UI compact labels to short labels")
 elif new_ui_value in u:
-    print("UI device choices already use compact IP/MAC labels")
+    print("UI device choices already use short IP/MAC labels")
 else:
     raise SystemExit("ERROR: EQOS Plus UI device value block not found; upstream changed")
 
 if "ip:value(dev.ip" not in u or "ip:value(dev.mac" not in u:
     raise SystemExit("ERROR: EQOS Plus UI validation failed, IP/MAC dual choices missing")
+if 't:option(ListValue, "mac"' in u:
+    raise SystemExit("ERROR: EQOS Plus UI validation failed, ListValue must not be used for editable IP/MAC target")
+if 'IP  %s  %s' not in u or 'MAC %s  %s' not in u:
+    raise SystemExit("ERROR: EQOS Plus UI validation failed, short IP/MAC labels missing")
 
 if ui_changed:
     ui_path.write_text(u, encoding="utf-8")
