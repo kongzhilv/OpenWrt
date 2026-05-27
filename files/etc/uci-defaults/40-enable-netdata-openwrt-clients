@@ -4,6 +4,18 @@ logger -t netdata-openwrt-clients "enable OpenWrt client realtime traffic charts
 
 PLUGIN="/usr/libexec/netdata/plugins.d/openwrt_clients.plugin"
 
+# Default config. Refresh choices are intentionally limited in the plugin to
+# 1/3/5/10 seconds. Default 3s keeps realtime feel with lower CPU usage.
+if ! uci -q get netdata_clients.main >/dev/null 2>&1; then
+    uci set netdata_clients.main='netdata_clients'
+    uci set netdata_clients.main.enabled='1'
+    uci set netdata_clients.main.lan_dev='br-lan'
+    uci set netdata_clients.main.update_every='3'
+    uci set netdata_clients.main.rescan_every='60'
+    uci set netdata_clients.main.max_clients='64'
+    uci commit netdata_clients
+fi
+
 if [ -f "$PLUGIN" ]; then
     chmod +x "$PLUGIN" 2>/dev/null || true
 fi
