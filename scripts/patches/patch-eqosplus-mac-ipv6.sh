@@ -57,11 +57,62 @@ elif new_up in s:
 else:
     raise SystemExit("ERROR: EQOS Plus old MAC upload filter block not found; upstream changed")
 
+# Normalize MAC input once it is known to be a MAC address. The UI generated MACs use
+# colon format, but manual input may use AA-BB-CC-DD-EE-FF. Without normalization,
+# is_macaddr() accepts the value while add_mac() later splits only on ':'.
+old_add_mac_head = '''add_mac() {
+    local list_id=$1
+    id=$((list_id * 10 + 1000))
+    M0=$(echo $mac | cut -d : -f 1)$(echo $mac | cut -d : -f 2)'''
+
+new_add_mac_head = '''add_mac() {
+    local list_id=$1
+    id=$((list_id * 10 + 1000))
+    mac="$(echo "$mac" | tr '-' ':' | tr 'a-f' 'A-F')"
+    M0=$(echo $mac | cut -d : -f 1)$(echo $mac | cut -d : -f 2)'''
+
+if old_add_mac_head in s:
+    s = s.replace(old_add_mac_head, new_add_mac_head)
+    changed = True
+    print("patched add_mac MAC normalization")
+elif new_add_mac_head in s:
+    print("add_mac MAC normalization already patched")
+else:
+    raise SystemExit("ERROR: EQOS Plus add_mac header block not found; upstream changed")
+
+old_del_mac = '''        if is_macaddr "$mac"; then
+            $nft delete rule inet ${NAME} mark_forward ether saddr $mac counter 2>/dev/null
+            $nft delete rule inet ${NAME} mark_output ether saddr $mac counter 2>/dev/null
+            $nft delete rule inet ${NAME} mark_postrouting ether saddr $mac counter 2>/dev/null'''
+
+new_del_mac = '''        if is_macaddr "$mac"; then
+            mac="$(echo "$mac" | tr '-' ':' | tr 'a-f' 'A-F')"
+            $nft delete rule inet ${NAME} mark_forward ether saddr $mac counter 2>/dev/null
+            $nft delete rule inet ${NAME} mark_output ether saddr $mac counter 2>/dev/null
+            $nft delete rule inet ${NAME} mark_postrouting ether saddr $mac counter 2>/dev/null'''
+
+if old_del_mac in s:
+    s = s.replace(old_del_mac, new_del_mac)
+    changed = True
+    print("patched del_id MAC normalization")
+elif new_del_mac in s:
+    print("del_id MAC normalization already patched")
+else:
+    raise SystemExit("ERROR: EQOS Plus del_id MAC nft block not found; upstream changed")
+
+required_script_snippets = [
+    "parent 1:0 protocol all",
+    "mac=\"$(echo \"$mac\" | tr '-' ':' | tr 'a-f' 'A-F')\"",
+]
+for snippet in required_script_snippets:
+    if snippet not in s:
+        raise SystemExit(f"ERROR: EQOS Plus script validation failed, missing: {snippet}")
+
 if changed:
     script_path.write_text(s, encoding="utf-8")
-    print("EQOS Plus MAC filters patched")
+    print("EQOS Plus MAC filters and normalization patched")
 else:
-    print("EQOS Plus MAC filters already patched")
+    print("EQOS Plus MAC filters and normalization already patched")
 
 u = ui_path.read_text(encoding="utf-8")
 ui_changed = False
@@ -178,6 +229,9 @@ elif new_ui_value in u:
     print("UI device choices already use compact IP/MAC labels")
 else:
     raise SystemExit("ERROR: EQOS Plus UI device value block not found; upstream changed")
+
+if "ip:value(dev.ip" not in u or "ip:value(dev.mac" not in u:
+    raise SystemExit("ERROR: EQOS Plus UI validation failed, IP/MAC dual choices missing")
 
 if ui_changed:
     ui_path.write_text(u, encoding="utf-8")
