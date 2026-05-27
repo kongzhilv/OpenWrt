@@ -74,6 +74,32 @@ else
     exit 1
 fi
 
+if grep -q 't:option(Value, "mac"' "$eqos_ui"; then
+    echo "OK: EQOS Plus UI keeps editable Value input"
+else
+    echo "ERROR: EQOS Plus UI must use Value for editable IP/MAC input"
+    exit 1
+fi
+
+if grep -q 't:option(ListValue, "mac"' "$eqos_ui"; then
+    echo "ERROR: EQOS Plus UI must not use ListValue"
+    exit 1
+fi
+
+if grep -q 'IP only matches IPv4; MAC matches IPv4/IPv6.' "$eqos_ui"; then
+    echo "OK: EQOS Plus UI explains IP/MAC behavior"
+else
+    echo "ERROR: EQOS Plus UI IP/MAC behavior hint missing"
+    exit 1
+fi
+
+if grep -q 'IP  %s  %s' "$eqos_ui" && grep -q 'MAC %s  %s' "$eqos_ui"; then
+    echo "OK: EQOS Plus UI uses short IP/MAC labels"
+else
+    echo "ERROR: EQOS Plus UI short IP/MAC labels missing"
+    exit 1
+fi
+
 echo "===== Add OpenList source ====="
 
 if [ -d feeds/packages ]; then
