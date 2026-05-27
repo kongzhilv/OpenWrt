@@ -58,12 +58,15 @@ test -f files/etc/uci-defaults/20-enable-netdata
 test -f files/etc/uci-defaults/21-app-service-defaults
 test -f files/etc/uci-defaults/30-netdata-zh
 test -f files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+test -f files/etc/config/netdata_clients
 test -f files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 
 grep -q "flow_offloading='0'" files/etc/uci-defaults/10-network-accel-defaults
 grep -q "netdata" files/etc/uci-defaults/20-enable-netdata
 grep -q "skip Netdata static web asset translation" files/etc/uci-defaults/30-netdata-zh
-grep -q "openwrt_clients.plugin" files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+grep -q "update_every='3'" files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+grep -q "option update_every '3'" files/etc/config/netdata_clients
+grep -q "1/3/5/10" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 grep -q "OpenWrt 客户端下载速率" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 grep -q "nft add table inet openwrt_clients" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 
