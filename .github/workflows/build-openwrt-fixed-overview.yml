@@ -55,6 +55,8 @@ jobs:
           test -f files/etc/uci-defaults/20-enable-netdata
           test -f files/etc/uci-defaults/21-app-service-defaults
           test -f files/etc/uci-defaults/30-netdata-zh
+          test -f files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+          test -f files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 
       - name: Free disk space
         timeout-minutes: 15
@@ -129,9 +131,12 @@ jobs:
           test -f files/etc/uci-defaults/10-network-accel-defaults
           test -f files/etc/uci-defaults/20-enable-netdata
           test -f files/etc/uci-defaults/30-netdata-zh
+          test -f files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+          test -f files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
           grep -q "flow_offloading='0'" files/etc/uci-defaults/10-network-accel-defaults
-          grep -q "localize netdata static web assets" files/etc/uci-defaults/30-netdata-zh
-          grep -q "系统概览" files/etc/uci-defaults/30-netdata-zh
+          grep -q "skip Netdata static web asset translation" files/etc/uci-defaults/30-netdata-zh
+          grep -q "OpenWrt 客户端下载速率" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+          grep -q "nft add table inet openwrt_clients" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 
       - name: Download sources
         run: |
@@ -201,8 +206,8 @@ jobs:
 
             Changes:
             - EQOS Plus MAC download filter uses protocol all for IPv6/L2 traffic.
-            - Netdata replaces wrtbwmon for realtime monitoring.
-            - Netdata static web assets are localized by files/etc/uci-defaults/30-netdata-zh.
+            - Netdata is kept as the realtime monitor without rewriting upstream web assets.
+            - OpenWrt client realtime upload/download charts are provided by files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin.
             - Flow offloading is disabled for tc/eqos accuracy.
           files: release-files/*
           draft: false
