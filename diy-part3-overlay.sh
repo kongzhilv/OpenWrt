@@ -47,13 +47,12 @@ do
   echo "${key}=y" >> .config
 done
 
-# Remove the old wrtbwmon monitor stack and flow offloading.
+# Remove only the old wrtbwmon monitor stack. Keep offload packages/features available,
+# but disable runtime offload by default through files/etc/uci-defaults/10-network-accel-defaults.
 for key in \
   CONFIG_PACKAGE_wrtbwmon \
   CONFIG_PACKAGE_luci-app-wrtbwmon \
-  CONFIG_PACKAGE_luci-wrtbwmon \
-  CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING \
-  CONFIG_PACKAGE_kmod-nft-offload
+  CONFIG_PACKAGE_luci-wrtbwmon
 do
   sed -i "/^${key}=y/d" .config || true
   sed -i "/^# ${key} is not set/d" .config || true
@@ -81,7 +80,11 @@ check_file files/etc/uci-defaults/40-enable-netdata-openwrt-clients
 check_file files/etc/config/netdata_clients
 check_file files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 
+check_grep "keep offload available but disabled by default" files/etc/uci-defaults/10-network-accel-defaults
 check_grep "flow_offloading='0'" files/etc/uci-defaults/10-network-accel-defaults
+check_grep "flow_offloading_hw='0'" files/etc/uci-defaults/10-network-accel-defaults
+check_grep "sw_flow='0'" files/etc/uci-defaults/10-network-accel-defaults
+check_grep "hw_flow='0'" files/etc/uci-defaults/10-network-accel-defaults
 check_grep "netdata" files/etc/uci-defaults/20-enable-netdata
 check_grep "skip Netdata static web asset translation" files/etc/uci-defaults/30-netdata-zh
 check_grep "update_every='3'" files/etc/uci-defaults/40-enable-netdata-openwrt-clients
@@ -101,6 +104,5 @@ check_grep "^CONFIG_PACKAGE_xtables-nft=y" .config
 check_no_grep "^CONFIG_PACKAGE_wrtbwmon=y" .config
 check_no_grep "^CONFIG_PACKAGE_luci-app-wrtbwmon=y" .config
 check_no_grep "^CONFIG_PACKAGE_luci-wrtbwmon=y" .config
-check_no_grep "^CONFIG_PACKAGE_kmod-nft-offload=y" .config
 
 echo "===== DIY part3 done ====="
