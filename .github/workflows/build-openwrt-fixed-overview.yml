@@ -140,7 +140,9 @@ jobs:
           grep -q "option update_every '3'" files/etc/config/netdata_clients
           grep -q "1/3/5/10" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
           grep -q "OpenWrt 客户端下载速率" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
-          grep -q "nft add table inet openwrt_clients" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+          grep -q 'TABLE="openwrt_clients"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+          grep -q 'nft add table inet "\$TABLE"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+          grep -q 'nft add chain inet "\$TABLE" "\$CHAIN"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 
       - name: Download sources
         run: |
