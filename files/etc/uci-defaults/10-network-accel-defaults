@@ -1,11 +1,19 @@
 #!/bin/sh
 
-logger -t network-accel-defaults "preserve network acceleration defaults"
+logger -t network-accel-defaults "keep offload available but disabled by default"
 
-# Keep flow/offload settings unchanged. EQOS/Netdata diagnostics should not force
-# firewall or Turbo ACC offload policy; users can control it from LuCI/SSH.
+# Keep offload packages/features in the image, but do not enable acceleration by
+# default. Users can turn it on later from LuCI/SSH if they want.
+uci -q set firewall.@defaults[0].flow_offloading='0'
+uci -q set firewall.@defaults[0].flow_offloading_hw='0'
+uci -q commit firewall
+
+uci -q set turboacc.config.sw_flow='0'
+uci -q set turboacc.config.hw_flow='0'
+uci -q set turboacc.config.sfe_flow='0'
 uci -q set turboacc.config.fullcone_nat='1'
 uci -q set turboacc.config.fullcone6='0'
+uci -q set turboacc.config.hw_wed='0'
 uci -q set turboacc.config.bbr_cca='1'
 uci -q commit turboacc
 
