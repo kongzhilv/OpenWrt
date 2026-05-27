@@ -3,6 +3,26 @@ set -e
 
 echo "===== DIY part3: copy repository files overlay and enforce Netdata/EQOS config ====="
 
+check_file() {
+  local f="$1"
+  [ -f "$f" ] || { echo "ERROR: missing file: $f"; exit 1; }
+}
+
+check_grep() {
+  local pattern="$1"
+  local f="$2"
+  grep -q "$pattern" "$f" || { echo "ERROR: pattern not found in $f: $pattern"; exit 1; }
+}
+
+check_no_grep() {
+  local pattern="$1"
+  local f="$2"
+  if grep -q "$pattern" "$f"; then
+    echo "ERROR: forbidden pattern found in $f: $pattern"
+    exit 1
+  fi
+}
+
 if [ ! -d "$GITHUB_WORKSPACE/files" ]; then
   echo "ERROR: repository files overlay missing: $GITHUB_WORKSPACE/files"
   exit 1
@@ -51,34 +71,36 @@ echo "===== Overlay files after copy ====="
 find files -type f | sort
 
 echo "===== Validate overlay defaults ====="
-test -f files/etc/uci-defaults/01-enable-wifi
-test -f files/etc/uci-defaults/02-set-argon-theme
-test -f files/etc/uci-defaults/10-network-accel-defaults
-test -f files/etc/uci-defaults/20-enable-netdata
-test -f files/etc/uci-defaults/21-app-service-defaults
-test -f files/etc/uci-defaults/30-netdata-zh
-test -f files/etc/uci-defaults/40-enable-netdata-openwrt-clients
-test -f files/etc/config/netdata_clients
-test -f files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_file files/etc/uci-defaults/01-enable-wifi
+check_file files/etc/uci-defaults/02-set-argon-theme
+check_file files/etc/uci-defaults/10-network-accel-defaults
+check_file files/etc/uci-defaults/20-enable-netdata
+check_file files/etc/uci-defaults/21-app-service-defaults
+check_file files/etc/uci-defaults/30-netdata-zh
+check_file files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+check_file files/etc/config/netdata_clients
+check_file files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 
-grep -q "flow_offloading='0'" files/etc/uci-defaults/10-network-accel-defaults
-grep -q "netdata" files/etc/uci-defaults/20-enable-netdata
-grep -q "skip Netdata static web asset translation" files/etc/uci-defaults/30-netdata-zh
-grep -q "update_every='3'" files/etc/uci-defaults/40-enable-netdata-openwrt-clients
-grep -q "option update_every '3'" files/etc/config/netdata_clients
-grep -q "1/3/5/10" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
-grep -q "OpenWrt 客户端下载速率" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
-grep -q "nft add table inet openwrt_clients" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "flow_offloading='0'" files/etc/uci-defaults/10-network-accel-defaults
+check_grep "netdata" files/etc/uci-defaults/20-enable-netdata
+check_grep "skip Netdata static web asset translation" files/etc/uci-defaults/30-netdata-zh
+check_grep "update_every='3'" files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+check_grep "option update_every '3'" files/etc/config/netdata_clients
+check_grep "1/3/5/10" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "OpenWrt 客户端下载速率" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep 'TABLE="openwrt_clients"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep 'nft add table inet "\$TABLE"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep 'nft add chain inet "\$TABLE" "\$CHAIN"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 
 echo "===== Validate selected config ====="
-grep -q "^CONFIG_PACKAGE_netdata=y" .config
-grep -q "^CONFIG_PACKAGE_luci-app-eqosplus=y" .config
-grep -q "^CONFIG_PACKAGE_iptables-nft=y" .config
-grep -q "^CONFIG_PACKAGE_ip6tables-nft=y" .config
-grep -q "^CONFIG_PACKAGE_xtables-nft=y" .config
-! grep -q "^CONFIG_PACKAGE_wrtbwmon=y" .config
-! grep -q "^CONFIG_PACKAGE_luci-app-wrtbwmon=y" .config
-! grep -q "^CONFIG_PACKAGE_luci-wrtbwmon=y" .config
-! grep -q "^CONFIG_PACKAGE_kmod-nft-offload=y" .config
+check_grep "^CONFIG_PACKAGE_netdata=y" .config
+check_grep "^CONFIG_PACKAGE_luci-app-eqosplus=y" .config
+check_grep "^CONFIG_PACKAGE_iptables-nft=y" .config
+check_grep "^CONFIG_PACKAGE_ip6tables-nft=y" .config
+check_grep "^CONFIG_PACKAGE_xtables-nft=y" .config
+check_no_grep "^CONFIG_PACKAGE_wrtbwmon=y" .config
+check_no_grep "^CONFIG_PACKAGE_luci-app-wrtbwmon=y" .config
+check_no_grep "^CONFIG_PACKAGE_luci-wrtbwmon=y" .config
+check_no_grep "^CONFIG_PACKAGE_kmod-nft-offload=y" .config
 
 echo "===== DIY part3 done ====="
