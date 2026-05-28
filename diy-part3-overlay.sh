@@ -90,7 +90,10 @@ check_grep "skip Netdata static web asset translation" files/etc/uci-defaults/30
 check_grep "update_every='3'" files/etc/uci-defaults/40-enable-netdata-openwrt-clients
 check_grep "option update_every '3'" files/etc/config/netdata_clients
 check_grep "1/3/5/10" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
-check_grep "OpenWrt 客户端下载速率" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "实时上下行" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "DIMENSION download '下载'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "DIMENSION upload '上传'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "openwrt_clients.client_rate" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_grep 'TABLE="openwrt_clients"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_grep 'nft add table inet "\$TABLE"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_grep 'nft add chain inet "\$TABLE" "\$CHAIN"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
