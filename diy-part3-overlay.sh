@@ -88,15 +88,32 @@ check_grep "hw_flow='0'" files/etc/uci-defaults/10-network-accel-defaults
 check_grep "netdata" files/etc/uci-defaults/20-enable-netdata
 check_grep "skip Netdata static web asset translation" files/etc/uci-defaults/30-netdata-zh
 check_grep "update_every='3'" files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+check_grep "clean_openwrt_clients_state" files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+check_grep "openwrt_clients chart DBs" files/etc/uci-defaults/40-enable-netdata-openwrt-clients
 check_grep "option update_every '3'" files/etc/config/netdata_clients
 check_grep "1/3/5/10" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
-check_grep "实时上下行" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
-check_grep "DIMENSION download '下载'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
-check_grep "DIMENSION upload '上传'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "title=\"\${host} \${ip}\"" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "family=\"\${host} \${ip}\"" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "DIMENSION download 'Download'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "DIMENSION upload 'Upload'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_grep "openwrt_clients.client_rate" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_grep 'TABLE="openwrt_clients"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_grep 'nft add table inet "\$TABLE"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_grep 'nft add chain inet "\$TABLE" "\$CHAIN"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_no_grep "OpenWrt 客户端" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_no_grep "实时上下行" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_no_grep "DIMENSION download '下载'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_no_grep "DIMENSION upload '上传'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+
+if [ -f files/etc/config/eqosplus ]; then
+  echo "ERROR: files/etc/config/eqosplus must not be embedded; it can carry real client limit rules"
+  exit 1
+fi
+if grep -R "192\.168\.2\." files 2>/dev/null; then
+  echo "ERROR: repository overlay must not embed real 192.168.2.x client rules"
+  exit 1
+fi
+
 
 echo "===== Validate selected config ====="
 check_grep "^CONFIG_PACKAGE_netdata=y" .config
