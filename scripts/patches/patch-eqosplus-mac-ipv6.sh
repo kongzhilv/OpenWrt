@@ -86,13 +86,26 @@ u = u.replace(
     '            local ip_addr, mac = line:match("^(%S+)%s+dev%s+%S+%s+lladdr%s+([0-9A-Fa-f:]+)")',
 )
 
-# Keep editable Value input/autocomplete. Do not use ListValue.
-u = re.sub(
-    r'ip = t:option\((?:Value|ListValue), "mac"[^\n]*\)\n[ \t]*ip\.size = \d+',
-    'ip = t:option(Value, "mac", translate("Limit target"), translate("IP only matches IPv4; MAC matches IPv4/IPv6."))\nip.size = 40',
+# Keep the real saved field editable, and add a separate device picker. This
+# avoids the LuCI/Argon case where Value:value() choices are not rendered as a
+# usable chooser. Manual input still supports IP / MAC / IP ranges; choosing a
+# device writes the selected IP or MAC back into the real "mac" option.
+manual_field = '''ip = t:option(Value, "mac", translate("手动输入目标"), translate("可手动输入 IP / MAC / IP段；若选择设备，下拉值会覆盖这里。"))
+ip.size = 40
+ip.rmempty = false
+
+pick = t:option(ListValue, "_target_pick", translate("选择设备"), translate("从在线设备选择 IP 或 MAC。"))
+pick.rmempty = true
+pick:value("", translate("-- 不从列表选择 --"))'''
+
+u, field_count = re.subn(
+    r'ip = t:option\((?:Value|ListValue), "mac"[^\n]*\)\n(?:[ \t]*ip\.(?:size|rmempty|description)[^\n]*\n)*',
+    manual_field + "\n",
     u,
     count=1,
 )
+if field_count != 1:
+    raise SystemExit("ERROR: EQOS Plus UI target field not found; upstream changed")
 
 # Replace the generated device choices with short, obvious labels. The saved
 # values remain different: dev.ip for IP mode, dev.mac for MAC/L2 mode.
@@ -101,8 +114,18 @@ new_ui_value = '''for _, dev in ipairs(devices) do
     if not name or name == "" or name == "unknown" then
         name = "Unknown device"
     end
-    ip:value(dev.ip, string.format("IP  %s  %s", dev.ip, name))
-    ip:value(dev.mac, string.format("MAC %s  %s", dev.mac, name))
+    pick:value(dev.ip, string.format("IP  %s  %s", dev.ip, name))
+    pick:value(dev.mac, string.format("MAC %s  %s", dev.mac, name))
+end
+
+pick.cfgvalue = function(self, section)
+    return ""
+end
+
+pick.write = function(self, section, value)
+    if value and value ~= "" then
+        m.uci:set("eqosplus", section, "mac", value)
+    end
 end'''
 
 patterns = [
@@ -112,6 +135,7 @@ patterns = [
     r'for _, dev in ipairs\(devices\) do\n[ \t]*-- Keep one device visually grouped.*?\n[ \t]*local name = dev\.hostname\n[\s\S]*?ip:value\(dev\.mac, string\.format\("%s  \|  按MAC限速 \|  MAC %s  \|  IP %s", name, dev\.mac, dev\.ip\)\)\nend',
     r'for _, dev in ipairs\(devices\) do\n[ \t]*local name = dev\.hostname\n[\s\S]*?ip:value\(dev\.mac, string\.format\("%s  ->  MAC %s", base, dev\.mac\)\)\nend',
     r'for _, dev in ipairs\(devices\) do\n[ \t]*local name = dev\.hostname\n[\s\S]*?ip:value\(dev\.mac, string\.format\("MAC %s  %s", dev\.mac, name\)\)\nend',
+    r'for _, dev in ipairs\(devices\) do\n[ \t]*local name = dev\.hostname\n[\s\S]*?pick:value\(dev\.mac, string\.format\("MAC %s  %s", dev\.mac, name\)\)\nend\n\npick\.cfgvalue = function\(self, section\)\n[\s\S]*?end',
 ]
 for pat in patterns:
     u2, n = re.subn(pat, new_ui_value, u, count=1, flags=re.S)
@@ -121,10 +145,16 @@ for pat in patterns:
 else:
     raise SystemExit("ERROR: EQOS Plus UI device value block not found; upstream changed")
 
-if "ip:value(dev.ip" not in u or "ip:value(dev.mac" not in u:
-    raise SystemExit("ERROR: EQOS Plus UI validation failed, IP/MAC dual choices missing")
-if 't:option(ListValue, "mac"' in u:
-    raise SystemExit("ERROR: EQOS Plus UI validation failed, ListValue must not be used")
+if 't:option(Value, "mac"' not in u:
+    raise SystemExit("ERROR: EQOS Plus UI validation failed, editable target field missing")
+if 't:option(ListValue, "_target_pick"' not in u:
+    raise SystemExit("ERROR: EQOS Plus UI validation failed, device picker missing")
+if "pick:value(dev.ip" not in u or "pick:value(dev.mac" not in u:
+    raise SystemExit("ERROR: EQOS Plus UI validation failed, IP/MAC picker choices missing")
+if 'pick.write = function' not in u or 'm.uci:set("eqosplus", section, "mac", value)' not in u:
+    raise SystemExit("ERROR: EQOS Plus UI validation failed, picker write-back missing")
+if 'ip:value(' in u:
+    raise SystemExit("ERROR: EQOS Plus UI validation failed, old ip:value choices still present")
 if 'IP  %s  %s' not in u or 'MAC %s  %s' not in u:
     raise SystemExit("ERROR: EQOS Plus UI validation failed, short IP/MAC labels missing")
 
