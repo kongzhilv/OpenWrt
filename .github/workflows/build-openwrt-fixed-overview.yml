@@ -44,43 +44,51 @@ jobs:
       - name: Check required files
         run: |
           mkdir -p logs release-files diagnostics
-          test -f "$CONFIG_FILE"
-          test -f "$DIY_P1_SH"
-          test -f "$DIY_P2_SH"
-          test -f "$DIY_P3_SH"
-          test -f scripts/patches/patch-eqosplus-mac-ipv6.sh
-          test -f files/etc/uci-defaults/01-enable-wifi
-          test -f files/etc/uci-defaults/02-set-argon-theme
-          test -f files/etc/uci-defaults/10-network-accel-defaults
-          test -f files/etc/uci-defaults/20-enable-netdata
-          test -f files/etc/uci-defaults/21-app-service-defaults
-          test -f files/etc/uci-defaults/30-netdata-zh
-          test -f files/etc/uci-defaults/40-enable-netdata-openwrt-clients
-          test -f files/etc/config/netdata_clients
-          test -f files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+          {
+            echo "===== Required files ====="
+            test -f "$CONFIG_FILE"
+            test -f "$DIY_P1_SH"
+            test -f "$DIY_P2_SH"
+            test -f "$DIY_P3_SH"
+            test -f scripts/patches/patch-eqosplus-mac-ipv6.sh
+            test -f files/etc/uci-defaults/01-enable-wifi
+            test -f files/etc/uci-defaults/02-set-argon-theme
+            test -f files/etc/uci-defaults/10-network-accel-defaults
+            test -f files/etc/uci-defaults/20-enable-netdata
+            test -f files/etc/uci-defaults/21-app-service-defaults
+            test -f files/etc/uci-defaults/30-netdata-zh
+            test -f files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+            test -f files/etc/config/netdata_clients
+            test -f files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+            find . -maxdepth 3 -type f | sort
+          } 2>&1 | tee logs/01_required_files.log
 
       - name: Free disk space
         timeout-minutes: 15
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
-          docker image prune --all --force || true
-          sudo timedatectl set-timezone "$TZ" || true
-          df -h
+          {
+            sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+            docker image prune --all --force || true
+            sudo timedatectl set-timezone "$TZ" || true
+            df -h
+          } 2>&1 | tee logs/02_free_disk_space.log
 
       - name: Install build dependencies
         timeout-minutes: 60
         run: |
-          sudo apt-get update
-          sudo apt-get -y install \
-            build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
-            gettext git libncurses-dev libssl-dev python3-setuptools rsync unzip \
-            zlib1g-dev file wget curl swig python3-dev qemu-utils libfuse-dev
+          {
+            sudo apt-get update
+            sudo apt-get -y install \
+              build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
+              gettext git libncurses-dev libssl-dev python3-setuptools rsync unzip \
+              zlib1g-dev file wget curl swig python3-dev qemu-utils libfuse-dev
+          } 2>&1 | tee logs/03_install_dependencies.log
 
       - name: Clone OpenWrt source
         run: |
           git clone -b "$REPO_BRANCH" --depth 1 "$REPO_URL" openwrt
           cd openwrt
-          git log -1 --oneline
+          git log -1 --oneline | tee "$GITHUB_WORKSPACE/logs/03b_clone_openwrt.log"
 
       - name: DIY part 1
         run: |
@@ -142,12 +150,24 @@ jobs:
           grep -q "sw_flow='0'" files/etc/uci-defaults/10-network-accel-defaults
           grep -q "hw_flow='0'" files/etc/uci-defaults/10-network-accel-defaults
           grep -q "skip Netdata static web asset translation" files/etc/uci-defaults/30-netdata-zh
+          grep -q "clean_openwrt_clients_state" files/etc/uci-defaults/40-enable-netdata-openwrt-clients
+          grep -q "openwrt_clients chart DBs" files/etc/uci-defaults/40-enable-netdata-openwrt-clients
           grep -q "option update_every '3'" files/etc/config/netdata_clients
           grep -q "1/3/5/10" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
-          grep -q "OpenWrt 客户端下载速率" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+          grep -q 'title="${host} ${ip}"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+          grep -q 'family="${host} ${ip}"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+          grep -q "DIMENSION download 'Download'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+          grep -q "DIMENSION upload 'Upload'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+          grep -q "openwrt_clients.client_rate" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
           grep -q 'TABLE="openwrt_clients"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
           grep -q 'nft add table inet "\$TABLE"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
           grep -q 'nft add chain inet "\$TABLE" "\$CHAIN"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+          if grep -q "OpenWrt 客户端" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin; then echo 'ERROR: old Chinese Netdata title remains'; exit 1; fi
+          if grep -q "实时上下行" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin; then echo 'ERROR: old Chinese Netdata title remains'; exit 1; fi
+          if grep -q "DIMENSION download '下载'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin; then echo 'ERROR: old Chinese download dimension remains'; exit 1; fi
+          if grep -q "DIMENSION upload '上传'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin; then echo 'ERROR: old Chinese upload dimension remains'; exit 1; fi
+          if [ -f files/etc/config/eqosplus ]; then echo 'ERROR: files/etc/config/eqosplus must not be embedded'; exit 1; fi
+          if grep -R "192\.168\.2\." files 2>/dev/null; then echo 'ERROR: repository overlay must not embed real 192.168.2.x client rules'; exit 1; fi
 
       - name: Download sources
         run: |
@@ -215,10 +235,9 @@ jobs:
 
             Changes:
             - EQOS Plus MAC download filter uses protocol all for IPv6/L2 traffic.
+            - EQOS Plus target UI has separate manual input and online-device picker.
             - Netdata is kept as the realtime monitor without rewriting upstream web assets.
             - OpenWrt client realtime upload/download charts are provided by files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin.
+            - Netdata client charts use clean ASCII labels and reset stale openwrt_clients chart state on setup.
             - Netdata client chart refresh is configurable with 1/3/5/10 second choices.
-            - Offload packages are kept available, but runtime offload is disabled by default.
           files: release-files/*
-          draft: false
-          prerelease: false
