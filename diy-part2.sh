@@ -67,29 +67,48 @@ else
     exit 1
 fi
 
-if grep -q "ip:value(dev.ip" "$eqos_ui" && grep -q "ip:value(dev.mac" "$eqos_ui"; then
-    echo "OK: EQOS Plus UI offers both IP and MAC choices"
+if grep -q "pick:value(dev.ip" "$eqos_ui" && grep -q "pick:value(dev.mac" "$eqos_ui"; then
+    echo "OK: EQOS Plus UI device picker offers both IP and MAC choices"
 else
-    echo "ERROR: EQOS Plus UI IP/MAC dual choices missing"
+    echo "ERROR: EQOS Plus UI IP/MAC picker choices missing"
     exit 1
 fi
 
 if grep -q 't:option(Value, "mac"' "$eqos_ui"; then
-    echo "OK: EQOS Plus UI keeps editable Value input"
+    echo "OK: EQOS Plus UI keeps editable manual target input"
 else
-    echo "ERROR: EQOS Plus UI must use Value for editable IP/MAC input"
+    echo "ERROR: EQOS Plus UI must keep Value for editable manual IP/MAC/IP-range input"
+    exit 1
+fi
+
+if grep -q 't:option(ListValue, "_target_pick"' "$eqos_ui"; then
+    echo "OK: EQOS Plus UI has separate device picker"
+else
+    echo "ERROR: EQOS Plus UI separate device picker missing"
     exit 1
 fi
 
 if grep -q 't:option(ListValue, "mac"' "$eqos_ui"; then
-    echo "ERROR: EQOS Plus UI must not use ListValue"
+    echo "ERROR: EQOS Plus UI must not turn the real mac option into ListValue"
     exit 1
 fi
 
-if grep -q 'IP only matches IPv4; MAC matches IPv4/IPv6.' "$eqos_ui"; then
-    echo "OK: EQOS Plus UI explains IP/MAC behavior"
+if grep -q 'pick.write = function' "$eqos_ui" && grep -q 'm.uci:set("eqosplus", section, "mac", value)' "$eqos_ui"; then
+    echo "OK: EQOS Plus UI picker writes selected target back to mac"
 else
-    echo "ERROR: EQOS Plus UI IP/MAC behavior hint missing"
+    echo "ERROR: EQOS Plus UI picker write-back missing"
+    exit 1
+fi
+
+if grep -q 'ip:value(' "$eqos_ui"; then
+    echo "ERROR: EQOS Plus UI still contains old ip:value choices"
+    exit 1
+fi
+
+if grep -q '手动输入目标' "$eqos_ui" && grep -q '选择设备' "$eqos_ui"; then
+    echo "OK: EQOS Plus UI has split manual input and device picker labels"
+else
+    echo "ERROR: EQOS Plus UI split labels missing"
     exit 1
 fi
 
@@ -177,7 +196,7 @@ PKG_LICENSE:=AGPL-3.0
 
 LUCI_TITLE:=Disk Manager interface for LuCI
 LUCI_DESCRIPTION:=Disk Manager interface for LuCI
-
+LUCI_PKGARCH:=all
 LUCI_DEPENDS:=+luci-compat +luci-lib-ipkg +e2fsprogs +parted +smartmontools +blkid +lsblk
 
 define Package/$(PKG_NAME)/config
