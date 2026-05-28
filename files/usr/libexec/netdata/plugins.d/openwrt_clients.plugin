@@ -146,13 +146,13 @@ emit_charts() {
             chart="openwrt_clients.$dim"
             title="OpenWrt 客户端 ${host}_${ip} 实时上下行"
             family="客户端_${host}_${ip}"
-            echo "CHART $chart '' '$title' 'bits/s' '$family' openwrt_clients.client_rate line $prio $UPDATE_EVERY"
-            echo "DIMENSION download '下载' incremental 8 1"
-            echo "DIMENSION upload '上传' incremental 8 1"
+            echo "CHART $chart '' '$title' 'KB/s' '$family' openwrt_clients.client_rate line $prio $UPDATE_EVERY"
+            echo "DIMENSION download '下载' incremental 1 1024"
+            echo "DIMENSION upload '上传' incremental 1 1024"
             prio=$((prio + 1))
         done < "$CLIENTS"
     else
-        echo "CHART openwrt_clients.no_clients '' 'OpenWrt 客户端实时上下行' 'bits/s' '无客户端' openwrt_clients.client_rate line 70000 $UPDATE_EVERY"
+        echo "CHART openwrt_clients.no_clients '' 'OpenWrt 客户端实时上下行' 'KB/s' '无客户端' openwrt_clients.client_rate line 70000 $UPDATE_EVERY"
         echo "DIMENSION no_clients '暂无客户端' absolute 1 1"
     fi
 }
