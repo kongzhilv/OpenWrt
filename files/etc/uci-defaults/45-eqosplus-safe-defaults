@@ -1,37 +1,28 @@
 #!/bin/sh
 
-logger -t eqosplus-safe-defaults "disable EQOS Plus sample rules by default"
+logger -t eqosplus-safe-defaults "disable EQOS Plus sample device rules only"
 
 # Some luci-app-eqosplus package defaults include sample device entries such as
-# 192.168.10.10 and 192.168.10.10-192.168.10.200. They must never become active
-# on a fresh image or preserved-config upgrade, otherwise users can see a hidden
-# 1 MB/s / 0.1 MB/s limit before configuring anything.
+# 192.168.10.10 and 192.168.10.10-192.168.10.200. Disable only these sample
+# entries. Do not change the global EQOS Plus switch, service autostart, or
+# existing tc state, otherwise preserved user rules can be unexpectedly cleared.
 
 changed=0
 idx=0
 while uci -q get eqosplus.@device[$idx] >/dev/null 2>&1; do
-    mac="$(uci -q get eqosplus.@device[$idx].mac 2>/dev/null || true)"
-    case "$mac" in
+    target="$(uci -q get eqosplus.@device[$idx].mac 2>/dev/null || true)"
+    case "$target" in
         192.168.10.10|192.168.10.10-192.168.10.200)
-            uci -q set eqosplus.@device[$idx].enable='0'
-            changed=1
+            if [ "$(uci -q get eqosplus.@device[$idx].enable 2>/dev/null || true)" != "0" ]; then
+                uci -q set eqosplus.@device[$idx].enable='0'
+                changed=1
+            fi
         ;;
     esac
     idx=$((idx + 1))
 done
 
-# Keep the service off until the user enables it intentionally in LuCI/SSH.
-uci -q set eqosplus.@eqosplus[0].enabled='0' 2>/dev/null && changed=1
 [ "$changed" = "1" ] && uci -q commit eqosplus
-
-/etc/init.d/eqosplus stop 2>/dev/null || true
-/etc/init.d/eqosplus disable 2>/dev/null || true
-
-# Drop stale tc state left by a previously active sample rule.
-tc qdisc del dev br-lan root 2>/dev/null || true
-tc qdisc del dev br-lan ingress 2>/dev/null || true
-tc qdisc del dev br-lan_ifb root 2>/dev/null || true
-ip link del br-lan_ifb 2>/dev/null || true
 
 logger -t eqosplus-safe-defaults "done"
 exit 0
