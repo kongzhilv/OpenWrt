@@ -3,14 +3,22 @@
 logger -t netdata-openwrt-clients "enable OpenWrt client realtime traffic charts"
 
 # OpenWrt's Netdata package starts plugins from /usr/lib/netdata/plugins.d.
-# Keep compatibility with older overlay path by copying the plugin from libexec
-# when needed.
+# Keep compatibility with older overlay path by copying the plugin from libexec.
 PLUGIN_SRC="/usr/libexec/netdata/plugins.d/openwrt_clients.plugin"
 PLUGIN_DIR="/usr/lib/netdata/plugins.d"
 PLUGIN="$PLUGIN_DIR/openwrt_clients.plugin"
 
+clean_openwrt_clients_state() {
+    # Only reset this custom plugin. Keep all other Netdata charts/history.
+    killall openwrt_clients.plugin 2>/dev/null || true
+    rm -rf /var/cache/netdata/openwrt_clients* 2>/dev/null || true
+    rm -rf /tmp/openwrt_clients 2>/dev/null || true
+    rm -rf /tmp/cache/netdata/openwrt_clients 2>/dev/null || true
+    nft delete table inet openwrt_clients 2>/dev/null || true
+}
+
 mkdir -p "$PLUGIN_DIR" 2>/dev/null || true
-if [ -f "$PLUGIN_SRC" ] && [ ! -f "$PLUGIN" ]; then
+if [ -f "$PLUGIN_SRC" ]; then
     cp -f "$PLUGIN_SRC" "$PLUGIN" 2>/dev/null || true
 fi
 
@@ -29,6 +37,11 @@ fi
 if [ -f "$PLUGIN" ]; then
     chmod +x "$PLUGIN" 2>/dev/null || true
 fi
+
+# Reset stale openwrt_clients chart DBs before the first/reconfigured Netdata
+# start. This prevents old 3-client chart registration from hiding newly
+# discovered clients after image upgrades or plugin changes.
+clean_openwrt_clients_state
 
 # Prepare the nft table early. The plugin will resync chains/counters dynamically.
 if command -v nft >/dev/null 2>&1; then
