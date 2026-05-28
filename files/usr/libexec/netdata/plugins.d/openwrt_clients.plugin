@@ -144,16 +144,16 @@ emit_charts() {
         while read -r ip mac host dim up down; do
             [ -n "$ip" ] || continue
             chart="openwrt_clients.$dim"
-            title="OpenWrt 客户端 ${host}_${ip} 实时上下行"
-            family="客户端_${host}_${ip}"
+            title="${host} ${ip}"
+            family="${host} ${ip}"
             echo "CHART $chart '' '$title' 'KB/s' '$family' openwrt_clients.client_rate line $prio $UPDATE_EVERY"
-            echo "DIMENSION download '下载' incremental 1 1024"
-            echo "DIMENSION upload '上传' incremental 1 1024"
+            echo "DIMENSION download 'Download' incremental 1 1024"
+            echo "DIMENSION upload 'Upload' incremental 1 1024"
             prio=$((prio + 1))
         done < "$CLIENTS"
     else
-        echo "CHART openwrt_clients.no_clients '' 'OpenWrt 客户端实时上下行' 'KB/s' '无客户端' openwrt_clients.client_rate line 70000 $UPDATE_EVERY"
-        echo "DIMENSION no_clients '暂无客户端' absolute 1 1"
+        echo "CHART openwrt_clients.no_clients '' 'No OpenWrt clients' 'KB/s' 'No clients' openwrt_clients.client_rate line 70000 $UPDATE_EVERY"
+        echo "DIMENSION no_clients 'No clients' absolute 1 1"
     fi
 }
 
@@ -197,6 +197,10 @@ emit_values() {
 
 need_cmd nft
 need_cmd ip
+
+# Always start from a fresh client scan. Netdata may preserve old chart DBs, but
+# the plugin should never trust a stale tmp client list.
+rm -f "$CLIENTS" "$CLIENTS_RAW" "$CLIENTS_NEW" "$COUNTERS" "$COUNTER_VALUES" 2>/dev/null || true
 
 last_rescan=0
 while :; do
