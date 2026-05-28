@@ -139,22 +139,21 @@ sync_nft_rules() {
 }
 
 emit_charts() {
-    echo "CHART openwrt_clients.download '' 'OpenWrt 客户端下载速率' 'bits/s' '客户端流量' openwrt.clients.download line 70000 $UPDATE_EVERY"
     if [ -s "$CLIENTS" ]; then
+        prio=70000
         while read -r ip mac host dim up down; do
-            echo "DIMENSION $dim '${host}_${ip}' incremental 8 1"
+            [ -n "$ip" ] || continue
+            chart="openwrt_clients.$dim"
+            title="OpenWrt 客户端 ${host}_${ip} 实时上下行"
+            family="客户端_${host}_${ip}"
+            echo "CHART $chart '' '$title' 'bits/s' '$family' openwrt_clients.client_rate line $prio $UPDATE_EVERY"
+            echo "DIMENSION download '下载' incremental 8 1"
+            echo "DIMENSION upload '上传' incremental 8 1"
+            prio=$((prio + 1))
         done < "$CLIENTS"
     else
-        echo "DIMENSION no_clients '无客户端' absolute 1 1"
-    fi
-
-    echo "CHART openwrt_clients.upload '' 'OpenWrt 客户端上传速率' 'bits/s' '客户端流量' openwrt.clients.upload line 70001 $UPDATE_EVERY"
-    if [ -s "$CLIENTS" ]; then
-        while read -r ip mac host dim up down; do
-            echo "DIMENSION $dim '${host}_${ip}' incremental 8 1"
-        done < "$CLIENTS"
-    else
-        echo "DIMENSION no_clients '无客户端' absolute 1 1"
+        echo "CHART openwrt_clients.no_clients '' 'OpenWrt 客户端实时上下行' 'bits/s' '无客户端' openwrt_clients.client_rate line 70000 $UPDATE_EVERY"
+        echo "DIMENSION no_clients '暂无客户端' absolute 1 1"
     fi
 }
 
@@ -170,24 +169,30 @@ parse_counters_once() {
     ' "$COUNTERS" > "$COUNTER_VALUES"
 }
 
+counter_value() {
+    local counter="$1"
+    awk -v c="$counter" '$1==c {print $2; found=1; exit} END {if (!found) print 0}' "$COUNTER_VALUES"
+}
+
 emit_values() {
     parse_counters_once
 
-    echo "BEGIN openwrt_clients.download"
     if [ -s "$CLIENTS" ]; then
-        awk 'NR==FNR {v[$1]=$2; next} {val=v[$6]; if (val=="") val=0; print "SET "$4" = "val}' "$COUNTER_VALUES" "$CLIENTS"
+        while read -r ip mac host dim up down; do
+            [ -n "$ip" ] || continue
+            chart="openwrt_clients.$dim"
+            down_val="$(counter_value "$down")"
+            up_val="$(counter_value "$up")"
+            echo "BEGIN $chart"
+            echo "SET download = $down_val"
+            echo "SET upload = $up_val"
+            echo "END"
+        done < "$CLIENTS"
     else
+        echo "BEGIN openwrt_clients.no_clients"
         echo "SET no_clients = 0"
+        echo "END"
     fi
-    echo "END"
-
-    echo "BEGIN openwrt_clients.upload"
-    if [ -s "$CLIENTS" ]; then
-        awk 'NR==FNR {v[$1]=$2; next} {val=v[$5]; if (val=="") val=0; print "SET "$4" = "val}' "$COUNTER_VALUES" "$CLIENTS"
-    else
-        echo "SET no_clients = 0"
-    fi
-    echo "END"
 }
 
 need_cmd nft
