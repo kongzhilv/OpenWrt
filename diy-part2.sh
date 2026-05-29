@@ -33,7 +33,7 @@ if [ ! -f package/turboacc/luci-app-turboacc/Makefile ]; then
 fi
 
 if [ ! -f package/turboacc/nft-fullcone/Makefile ]; then
-    echo "ERROR: nft-fullcone missing, check diy-part1.sh"
+    echo "ERROR: nft-fullcone missing"
     find package/turboacc -maxdepth 6 -type f -name Makefile | sort || true
     exit 1
 fi
@@ -85,12 +85,29 @@ if grep -q 'ip:value(dev.mac, dev.display)' "$eqos_ui"; then
     exit 1
 fi
 
-for bad in '_target_pick' 'pick.write = function' '手动输入目标' '选择设备' 'devices fallback' 'protocol all'; do
-    if grep -q "$bad" "$eqos_ui" "$eqos_script" 2>/dev/null; then
-        echo "ERROR: EQOS Plus leftover forbidden patch found: $bad"
+for bad in '_target_pick' 'pick.write = function' '手动输入目标' '选择设备' 'devices fallback'; do
+    if grep -q "$bad" "$eqos_ui" 2>/dev/null; then
+        echo "ERROR: EQOS Plus UI leftover forbidden patch found: $bad"
         exit 1
     fi
 done
+
+# Do not reject the upstream ingress redirect line: it legitimately uses
+# parent ffff: protocol all. Only reject the old bad MAC-filter patch shape.
+if grep -q 'parent 1:0 protocol all' "$eqos_script"; then
+    echo "ERROR: EQOS Plus backend contains old bad MAC protocol-all patch"
+    exit 1
+fi
+if grep -q 'mac=\\"' "$eqos_script"; then
+    echo "ERROR: EQOS Plus backend contains broken quoted MAC normalization"
+    exit 1
+fi
+if grep -q 'match u16 0x0800 0xFFFF at -2' "$eqos_script"; then
+    echo "OK: EQOS Plus backend keeps upstream MAC EtherType guards"
+else
+    echo "ERROR: EQOS Plus backend is not the expected upstream MAC filter logic"
+    exit 1
+fi
 
 echo "===== Add OpenList source ====="
 
