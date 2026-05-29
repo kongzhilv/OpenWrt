@@ -53,71 +53,44 @@ fi
 eqos_script="package/luci-app-eqosplus/root/usr/bin/eqosplus"
 eqos_ui="package/luci-app-eqosplus/luasrc/model/cbi/eqosplus.lua"
 
-if grep -q "parent 1:0 protocol all" "$eqos_script"; then
-    echo "OK: EQOS Plus MAC IPv6/L2 patch is present"
+# Keep the GitHub upstream EQOS Plus backend behavior intact. The only EQOS
+# customization in this build is the LuCI chooser: one original IP/MAC field,
+# with clean IP and MAC choices. MAC/IP mode is still decided by the existing
+# backend from the saved value in option mac.
+if grep -q 't:option(Value, "mac", translate("IP/MAC"))' "$eqos_ui"; then
+    echo "OK: EQOS Plus UI keeps original editable IP/MAC field"
 else
-    echo "ERROR: EQOS Plus MAC IPv6/L2 patch missing"
+    echo "ERROR: EQOS Plus UI original IP/MAC field missing"
     exit 1
 fi
 
-if grep -q "tr '-' ':' | tr 'a-f' 'A-F'" "$eqos_script"; then
-    echo "OK: EQOS Plus MAC normalization patch is present"
+if grep -q 'ip:value(dev.ip, string.format("\[IP\]  %s | %s", dev.ip, name))' "$eqos_ui" \
+   && grep -q 'ip:value(dev.mac, string.format("\[MAC\] %s | %s", dev.mac, name))' "$eqos_ui"; then
+    echo "OK: EQOS Plus UI offers clean IP and MAC choices in one field"
 else
-    echo "ERROR: EQOS Plus MAC normalization patch missing"
+    echo "ERROR: EQOS Plus UI clean IP/MAC choices missing"
     exit 1
 fi
 
-if grep -q "pick:value(dev.ip" "$eqos_ui" && grep -q "pick:value(dev.mac" "$eqos_ui"; then
-    echo "OK: EQOS Plus UI device picker offers both IP and MAC choices"
+if grep -q 'Ll\]\[Ll\]\[Aa\]\[Dd\]\[Dd\]\[Rr\]' "$eqos_ui" \
+   && grep -q '\[0-9A-Fa-f:\]\+' "$eqos_ui"; then
+    echo "OK: EQOS Plus UI parses ip neigh lladdr as MAC"
 else
-    echo "ERROR: EQOS Plus UI IP/MAC picker choices missing"
+    echo "ERROR: EQOS Plus UI lladdr MAC parsing missing"
     exit 1
 fi
 
-if grep -q 't:option(Value, "mac"' "$eqos_ui"; then
-    echo "OK: EQOS Plus UI keeps editable manual target input"
-else
-    echo "ERROR: EQOS Plus UI must keep Value for editable manual IP/MAC/IP-range input"
+if grep -q 'ip:value(dev.mac, dev.display)' "$eqos_ui"; then
+    echo "ERROR: EQOS Plus UI still has raw MAC display choices"
     exit 1
 fi
 
-if grep -q 't:option(ListValue, "_target_pick"' "$eqos_ui"; then
-    echo "OK: EQOS Plus UI has separate device picker"
-else
-    echo "ERROR: EQOS Plus UI separate device picker missing"
-    exit 1
-fi
-
-if grep -q 't:option(ListValue, "mac"' "$eqos_ui"; then
-    echo "ERROR: EQOS Plus UI must not turn the real mac option into ListValue"
-    exit 1
-fi
-
-if grep -q 'pick.write = function' "$eqos_ui" && grep -q 'm.uci:set("eqosplus", section, "mac", value)' "$eqos_ui"; then
-    echo "OK: EQOS Plus UI picker writes selected target back to mac"
-else
-    echo "ERROR: EQOS Plus UI picker write-back missing"
-    exit 1
-fi
-
-if grep -q 'ip:value(' "$eqos_ui"; then
-    echo "ERROR: EQOS Plus UI still contains old ip:value choices"
-    exit 1
-fi
-
-if grep -q '手动输入目标' "$eqos_ui" && grep -q '选择设备' "$eqos_ui"; then
-    echo "OK: EQOS Plus UI has split manual input and device picker labels"
-else
-    echo "ERROR: EQOS Plus UI split labels missing"
-    exit 1
-fi
-
-if grep -q 'IP  %s  %s' "$eqos_ui" && grep -q 'MAC %s  %s' "$eqos_ui"; then
-    echo "OK: EQOS Plus UI uses short IP/MAC labels"
-else
-    echo "ERROR: EQOS Plus UI short IP/MAC labels missing"
-    exit 1
-fi
+for bad in '_target_pick' 'pick.write = function' '手动输入目标' '选择设备' 'devices fallback' 'protocol all'; do
+    if grep -q "$bad" "$eqos_ui" "$eqos_script" 2>/dev/null; then
+        echo "ERROR: EQOS Plus leftover forbidden patch found: $bad"
+        exit 1
+    fi
+done
 
 echo "===== Add OpenList source ====="
 
