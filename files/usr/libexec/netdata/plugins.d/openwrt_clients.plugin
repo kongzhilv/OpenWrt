@@ -1,10 +1,13 @@
 #!/bin/sh
 # Netdata external plugin: OpenWrt per-client IPv4 realtime traffic.
+# UI layout: one chart per client with Chinese labels.
 # Data source: nftables named counters in inet/openwrt_clients.
 
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 TABLE="openwrt_clients"
 CHAIN="forward"
+CHART_NS="openwrt_clients_zh"
+CHART_CONTEXT="openwrt_clients_zh.client_rate"
 
 uci_get() {
     command -v uci >/dev/null 2>&1 || return 1
@@ -146,12 +149,12 @@ emit_charts() {
     prio=70000
     while read -r ip mac host dim up down; do
         [ -n "$ip" ] || continue
-        chart="openwrt_clients.$dim"
-        title="${host} ${ip}"
+        chart="$CHART_NS.$dim"
+        title="客户端 ${host} (${ip})"
         family="${host} ${ip}"
-        echo "CHART $chart '' '$title' 'KB/s' '$family' openwrt_clients.client_rate line $prio $UPDATE_EVERY"
-        echo "DIMENSION download 'Download' incremental 1 1024"
-        echo "DIMENSION upload 'Upload' incremental 1 1024"
+        echo "CHART $chart '' '$title' 'KB/s' '$family' $CHART_CONTEXT line $prio $UPDATE_EVERY"
+        echo "DIMENSION download '下载' incremental 1 1024"
+        echo "DIMENSION upload '上传' incremental 1 1024"
         prio=$((prio + 1))
     done < "$CLIENTS"
 }
@@ -180,7 +183,7 @@ emit_values() {
 
     while read -r ip mac host dim up down; do
         [ -n "$ip" ] || continue
-        chart="openwrt_clients.$dim"
+        chart="$CHART_NS.$dim"
         down_val="$(counter_value "$down")"
         up_val="$(counter_value "$up")"
         echo "BEGIN $chart"
