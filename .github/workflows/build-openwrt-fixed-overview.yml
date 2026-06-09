@@ -211,6 +211,35 @@ jobs:
 
           find release-files -type f -exec ls -lah {} \; 2>/dev/null | sort || true
 
+      - name: Create GitHub Release
+        if: ${{ success() && env.UPLOAD_RELEASE == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! find release-files -type f \( -name "*.bin" -o -name "*.img" -o -name "*.img.gz" -o -name "*.itb" \) | grep -q .; then
+            echo "No firmware image found; skip release."
+            exit 0
+          fi
+
+          tag="OpenWrt_Netdata_EQOS_$(date +'%Y%m%d_%H%M%S')_${GITHUB_RUN_NUMBER}"
+          notes="/tmp/${tag}.md"
+          {
+            echo "# ${tag}"
+            echo
+            echo "- Repository: ${GITHUB_REPOSITORY}"
+            echo "- Workflow run: ${GITHUB_RUN_NUMBER}"
+            echo "- Commit: ${GITHUB_SHA}"
+            echo "- Target branch: ${GITHUB_REF_NAME}"
+            echo
+            echo "## Firmware files"
+            find release-files -maxdepth 1 -type f -printf '- %f\n' | sort
+          } > "$notes"
+
+          gh release create "$tag" release-files/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$tag" \
+            --notes-file "$notes"
+
       - name: Upload firmware artifact
         if: ${{ always() && env.UPLOAD_FIRMWARE == 'true' }}
         uses: actions/upload-artifact@v4
