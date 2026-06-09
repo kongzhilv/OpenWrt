@@ -2,13 +2,13 @@
 
 这是一个面向 **中国移动 CMCC RAX3000M / MediaTek Filogic** 的 OpenWrt 自动构建仓库。
 
-本仓库本身不是 OpenWrt 源码仓，而是一套用于 GitHub Actions 自动编译固件的配置、脚本和 overlay 文件。构建时会从官方 OpenWrt 仓库拉取源码，再注入本仓库中的 `.config`、`diy-*.sh` 脚本和 `files/` 覆盖文件，最终生成可刷写的固件文件。
+本仓库本身不是 OpenWrt 源码仓，而是一套用于 GitHub Actions 自动编译固件的配置、脚本和 `files/` overlay 文件。构建时会从官方 OpenWrt 仓库拉取源码，再注入本仓库中的 `.config`、`diy-*.sh` 脚本、第三方包补丁和 `files/` 覆盖文件，最终生成可刷写固件。
 
-> ⚠️ 刷机有风险，操作前请确认设备型号、闪存布局、救砖方式和原厂固件恢复方法。本仓库主要用于个人自用构建，不保证适用于所有硬件版本。
+> ⚠️ 刷机有风险。操作前请确认设备型号、闪存布局、救砖方式和原厂固件恢复方法。本仓库主要用于个人自用构建，不保证适用于所有硬件版本。
 
 ## 目标设备
 
-当前 `.config` 指定的目标为：
+当前 `.config` 指定目标为：
 
 ```text
 CONFIG_TARGET_mediatek=y
@@ -17,13 +17,40 @@ CONFIG_TARGET_mediatek_filogic_DEVICE_cmcc_rax3000m=y
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
 ```
 
-也就是说，本仓库默认构建的是 **CMCC RAX3000M** 的 OpenWrt 固件。
+也就是说，本仓库默认构建 **CMCC RAX3000M** 的 OpenWrt 固件。请不要直接把该配置用于其它路由器型号。
 
-请不要直接把该配置用于其它路由器型号。即使同为 MediaTek Filogic 平台，不同设备的 DTS、分区、无线校准数据、闪存布局和固件格式也可能不同。
+## ROM、运行时 overlay 和仓库 files/ 的关系
+
+OpenWrt 刷入后的只读固件层通常对应 `/rom`，刷机后运行中修改的文件、安装的软件包和热修内容会进入可写 overlay。系统实际看到的 `/` 是 ROM 与 overlay 合并后的结果。
+
+本仓库中的：
+
+```text
+files/...
+```
+
+是 **构建时 overlay**，会在编译阶段被复制进 OpenWrt buildroot 的 `files/`，最终进入新固件 ROM。它不是路由器运行时的 overlay 分区。
+
+因此：
+
+```text
+仓库 files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+-> 构建进新固件
+-> 刷机后出现在 /rom/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+-> 系统通过 /usr/libexec/netdata/plugins.d/openwrt_clients.plugin 使用它
+```
+
+如果刷机时选择“不保留配置”，旧 overlay 中的 `/etc/config/eqosplus`、手工热修脚本和运行中 `tc/nft` 规则不会被保留。但如果仓库 `files/` 中嵌入了配置，它会成为新 ROM 自带内容。
+
+本仓库明确禁止嵌入：
+
+```text
+files/etc/config/eqosplus
+```
+
+避免把真实家庭设备 MAC/IP 限速规则写入公开仓库或固件 ROM。
 
 ## 固件特性
-
-当前构建主要集成以下内容：
 
 ### Web 管理与基础功能
 
@@ -54,22 +81,6 @@ CONFIG_TARGET_ROOTFS_SQUASHFS=y
 - `wireless-regdb`
 - `wpad-basic-mbedtls`
 
-### USB 网卡相关
-
-当前主要保留 USB 网络设备支持，例如：
-
-- `kmod-usb-core`
-- `kmod-usb2`
-- `kmod-usb3`
-- `kmod-usb-net`
-- `kmod-usb-net-cdc-ether`
-- `kmod-usb-net-rndis`
-- `kmod-usb-net-cdc-ncm`
-- `kmod-usb-net-cdc-eem`
-- `kmod-usb-net-cdc-subset`
-
-注意：本仓库默认没有启用 USB 存储、exFAT、NTFS、Btrfs、Docker、OpenClash、Passwall 等体积较大或容易引入冲突的组件。
-
 ### 已集成应用
 
 - OpenList
@@ -84,19 +95,13 @@ CONFIG_TARGET_ROOTFS_SQUASHFS=y
 
 ### 默认 LAN IP
 
-构建脚本会把默认 LAN IP 从 OpenWrt 常见的：
-
-```text
-192.168.1.1
-```
-
-修改为：
+构建脚本会把默认 LAN IP 从 `192.168.1.1` 修改为：
 
 ```text
 192.168.2.1
 ```
 
-首次刷机后，请优先访问：
+首次刷机后访问：
 
 ```text
 http://192.168.2.1
@@ -113,18 +118,13 @@ OpenWrt_5G
 
 默认区域为 `CN`。
 
-默认信道和带宽大致为：
-
-- 2.4 GHz：信道 1，HE40
-- 5 GHz：信道 36，HE80
-
-> ⚠️ 当前脚本在无线加密未设置时会将 `encryption` 设为 `none`。也就是说，首次启动后 Wi-Fi 可能是开放网络。请在首次登录后立即设置无线密码，或者在刷机前自行修改 `files/etc/uci-defaults/01-enable-wifi`。
+> ⚠️ 当前脚本在无线加密未设置时会将 `encryption` 设为 `none`。首次登录后请立即设置无线密码，或者在刷机前自行修改 `files/etc/uci-defaults/01-enable-wifi`。
 
 ### 网络加速默认策略
 
-本仓库会把 Turbo ACC、nft fullcone、BBR、offload 相关组件编进固件，但默认运行时不会开启大部分加速项。
+本仓库会把 Turbo ACC、nft fullcone、BBR、offload 相关组件编进固件，但默认运行时关闭大部分加速项，方便排障和避免影响监控/限速。
 
-`files/etc/uci-defaults/10-network-accel-defaults` 默认行为：
+`files/etc/uci-defaults/10-network-accel-defaults` 默认行为大致为：
 
 ```sh
 firewall.@defaults[0].flow_offloading='0'
@@ -138,21 +138,45 @@ turboacc.config.hw_wed='0'
 turboacc.config.bbr_cca='1'
 ```
 
-设计目的：
+## Netdata 客户端实时流量插件
 
-- 保留相关功能，方便后续手动开启；
-- 默认关闭可能影响稳定性或排障的加速项；
-- 默认启用 FullCone NAT IPv4 和 BBR CCA。
-
-### Netdata 客户端实时流量
-
-本仓库使用 Netdata 作为实时监控方案，并额外提供一个自定义插件：
+本仓库使用 Netdata 作为实时监控方案，并额外提供自定义插件：
 
 ```text
 files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 ```
 
-该插件通过 nftables named counters 统计 LAN 客户端 IPv4 实时上下行速率。
+当前插件特性：
+
+- 使用 `inet openwrt_clients` nftables 表；
+- 使用 named counters 统计每个 LAN 客户端实时流量；
+- 一台客户端一张图；
+- 图表命名空间为 `openwrt_clients_zh`；
+- 图表标题为中文；
+- 维度细分为 IPv4 / IPv6：
+
+```text
+IPv4下载
+IPv4上传
+IPv6下载
+IPv6上传
+```
+
+插件会从以下来源发现客户端：
+
+```text
+/tmp/dhcp.leases
+ip -4 neigh show dev br-lan
+ip -6 neigh show dev br-lan
+```
+
+IPv6 统计逻辑：
+
+- 跳过 `fe80::` link-local；
+- 跳过 `ff*` multicast；
+- 跳过 FAILED 邻居；
+- 尽量按 MAC 聚合同一设备的 IPv4/IPv6 地址；
+- 同一 MAC 下多个 IPv6 地址会被归入同一客户端图表。
 
 默认配置文件：
 
@@ -179,14 +203,7 @@ config netdata_clients 'main'
 - `rescan_every`：重新扫描在线客户端的间隔，最低 30 秒；
 - `max_clients`：最多显示客户端数量，默认 64，插件内部最多限制到 128。
 
-注意事项：
-
-- 当前插件主要统计 IPv4 客户端；
-- 客户端来源主要是 `/tmp/dhcp.leases` 和 `ip -4 neigh show dev br-lan`；
-- 如果你的 LAN 不是 `br-lan`，需要修改 `netdata_clients.main.lan_dev`；
-- 刷新间隔越小，CPU 开销越高。
-
-### EQOS Plus 调整
+## EQOS Plus 调整
 
 本仓库会拉取 `sirpdboy/luci-app-eqosplus`，并通过：
 
@@ -194,7 +211,7 @@ config netdata_clients 'main'
 scripts/patches/patch-eqosplus-mac-ipv6.sh
 ```
 
-对 LuCI 页面做轻量调整。
+对 LuCI 页面和后端脚本进行补丁。
 
 当前补丁目标：
 
@@ -202,50 +219,43 @@ scripts/patches/patch-eqosplus-mac-ipv6.sh
 - 同一个选择器中同时提供 IP 和 MAC 候选；
 - 修正 `dhcp.leases` 解析；
 - 修正 `ip neigh` 中 `lladdr` 的 MAC 解析，避免把 `STALE`、`REACHABLE` 等状态误识别为 MAC；
+- 修复 `@device[10]` 及以后设备编号被 `grep -o '[0-9]'` 拆开的问题；
+- 把每设备 leaf qdisc 从 `sfq` 改为 `fq_codel`；
+- IFB 创建后设置 `txqueuelen 1000`；
+- 尝试补充 IPv6 相关 tc filter；
 - 不把真实限速规则嵌入固件 overlay。
 
-## 仓库结构
+### EQOS Plus 单位说明
+
+当前 EQOS Plus 后端换算中，界面数值不是 Mbps，而近似等价于：
 
 ```text
-.
-├── .config
-├── diy-part1.sh
-├── diy-part2.sh
-├── diy-part3-overlay.sh
-├── files/
-│   ├── etc/
-│   │   ├── config/
-│   │   │   └── netdata_clients
-│   │   └── uci-defaults/
-│   │       ├── 01-enable-wifi
-│   │       ├── 02-set-argon-theme
-│   │       ├── 10-network-accel-defaults
-│   │       ├── 20-enable-netdata
-│   │       ├── 21-app-service-defaults
-│   │       ├── 30-netdata-zh
-│   │       └── 40-enable-netdata-openwrt-clients
-│   └── usr/
-│       └── libexec/
-│           └── netdata/
-│               └── plugins.d/
-│                   └── openwrt_clients.plugin
-├── scripts/
-│   └── patches/
-│       └── patch-eqosplus-mac-ipv6.sh
-└── .github/
-    └── workflows/
-        └── build-openwrt-fixed-overview.yml
+实际 Mbps = EQOS 数值 * 8.192
 ```
 
-## 构建流程说明
+例如 1000/100 Mbps 宽带，如果想把瓶颈控制在路由器侧，建议总值从以下开始测试：
 
-GitHub Actions 工作流文件位于：
+```text
+download = 110  ≈ 901 Mbps
+upload   = 11   ≈ 90 Mbps
+```
+
+设备限速同理：
+
+```text
+5 ≈ 40.96 Mbps
+10 ≈ 81.92 Mbps
+```
+
+## GitHub Actions 构建与 Release
+
+工作流文件：
 
 ```text
 .github/workflows/build-openwrt-fixed-overview.yml
 ```
 
-当前主要环境变量：
+主要环境变量：
 
 ```yaml
 REPO_URL: https://github.com/openwrt/openwrt
@@ -259,56 +269,62 @@ UPLOAD_RELEASE: "true"
 TZ: Asia/Shanghai
 ```
 
-构建步骤概览：
+构建流程概览：
 
 1. 检查本仓库必须文件是否存在；
 2. 清理 GitHub Actions runner 的磁盘空间；
 3. 安装 OpenWrt 编译依赖；
 4. 克隆官方 OpenWrt 源码；
-5. 执行 `diy-part1.sh` 添加第三方包；
-6. 执行 `./scripts/feeds update -a`；
-7. 执行 `./scripts/feeds install -a`；
-8. 复制 `.config` 到 OpenWrt 源码目录；
-9. 执行 `diy-part2.sh`；
-10. 执行 `diy-part3-overlay.sh`；
-11. 执行 `make defconfig`；
-12. 执行 `make download -j8 V=s`；
-13. 执行 `make -j4 V=s`；
-14. 如果并行构建失败，回退执行 `make -j1 V=s`；
-15. 收集固件文件、manifest、buildinfo、sha256sums 等；
+5. 执行 `diy-part1.sh` 添加第三方包并 patch EQOS Plus；
+6. 执行 feeds update/install；
+7. 复制 `.config` 到 OpenWrt 源码目录；
+8. 执行 `diy-part2.sh`；
+9. 执行 `diy-part3-overlay.sh`；
+10. 执行 `make defconfig`；
+11. 执行 `make download -j8 V=s`；
+12. 执行 `make -j4 V=s`；
+13. 如果并行构建失败，回退执行 `make -j1 V=s`；
+14. 收集固件文件、manifest、buildinfo、sha256sums 等；
+15. 构建成功时创建 GitHub Release；
 16. 上传 GitHub Actions artifact；
-17. 构建成功时发布 GitHub Release。
+17. 上传诊断日志 artifact。
+
+### 为什么某次 Actions 只有 artifact 没有 Release
+
+如果 workflow 里没有 `Create GitHub Release` 步骤，即使构建成功，也只会上传 artifact，不会创建 Release。当前 workflow 已加入 Release 步骤：构建成功且 `UPLOAD_RELEASE=true` 时，会用 `gh release create` 把 `release-files/*` 发布到 GitHub Releases。
+
+GitHub Actions 使用仓库的自动 `GITHUB_TOKEN` 进行 API 操作；本工作流已设置：
+
+```yaml
+permissions:
+  contents: write
+```
+
+用于创建 Release 和上传 release assets。
 
 ## 如何使用 GitHub Actions 构建
 
-1. Fork 或克隆本仓库。
-2. 进入仓库的 **Actions** 页面。
-3. 选择工作流：`Build OpenWrt Netdata EQOS`。
-4. 点击 **Run workflow**。
-5. 等待构建完成。
-6. 在 workflow run 页面下载 artifact：
+1. 进入仓库的 **Actions** 页面；
+2. 选择工作流：`Build OpenWrt Netdata EQOS`；
+3. 点击 **Run workflow**；
+4. 等待构建完成；
+5. 在 workflow run 页面下载 artifact；
+6. 构建成功后也会在 Releases 页面生成发行版。
+
+artifact 名称大致为：
 
 ```text
 OpenWrt_Firmware_Netdata_EQOS_<run_number>
-```
-
-同时也会上传诊断日志：
-
-```text
 OpenWrt_Netdata_EQOS_Diagnostics_<run_number>
 ```
 
-如果构建成功且 `UPLOAD_RELEASE` 为 `true`，会自动发布 Release，tag 名大致为：
+Release tag 名称大致为：
 
 ```text
-OpenWrt_Netdata_EQOS_YYYYMMDD_HHMMSS
+OpenWrt_Netdata_EQOS_YYYYMMDD_HHMMSS_<run_number>
 ```
 
 ## 本地构建参考
-
-本仓库主要面向 GitHub Actions，但也可以参考以下步骤在 Linux 环境中本地构建。
-
-> 本地构建需要较大的磁盘空间和较长时间。请确保文件系统大小写敏感。
 
 ```sh
 git clone https://github.com/kongzhilv/OpenWrt.git build-config
@@ -339,180 +355,61 @@ make -j$(nproc) V=s
 openwrt/bin/targets/
 ```
 
-## 重要注意事项
-
-### 1. 不要混刷设备
-
-本仓库目标是 `cmcc_rax3000m`。请确认你的设备型号、硬件版本和刷机方式完全匹配。
-
-### 2. 首次启动后立刻设置密码
-
-建议首次登录后立即完成：
-
-- 设置 root 密码；
-- 设置 Wi-Fi 加密方式和密码；
-- 检查 LAN/WAN 口是否符合你的接线方式；
-- 检查 Netdata、EQOS Plus、Turbo ACC 是否按预期运行。
-
-### 3. 默认 Wi-Fi 可能开放
-
-`01-enable-wifi` 会自动启用无线，并在没有现有加密设置时使用 `encryption=none`。如果你不希望默认开放 Wi-Fi，请在构建前修改该脚本。
-
-### 4. 第三方包没有固定 commit
-
-当前脚本会在构建时从多个上游仓库拉取最新代码，例如：
-
-- `jerrykuku/luci-theme-argon`
-- `sirpdboy/luci-app-lucky`
-- `chenmozhijin/turboacc`
-- `sirpdboy/luci-app-eqosplus`
-- `OpenListTeam/OpenList-OpenWRT`
-- `lisaac/luci-app-diskman`
-
-这意味着构建结果可能会受到上游变动影响。若需要可复现构建，建议把这些第三方源固定到具体 commit 或 tag。
-
-### 5. Release 固件仍需自行验证
-
-即使 GitHub Actions 构建成功，也不代表固件一定适合你的设备。刷机前建议检查：
-
-- 固件文件名是否对应目标设备；
-- manifest 中是否包含预期包；
-- sha256sums 是否匹配；
-- 是否有足够的救砖手段；
-- 是否需要从 factory 固件或 sysupgrade 固件进入。
-
-## 可按需修改的地方
-
-### 修改默认 LAN IP
-
-修改：
-
-```text
-diy-part2.sh
-```
-
-找到：
-
-```sh
-sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate || true
-```
-
-把 `192.168.2.1` 改成你需要的地址。
-
-### 修改默认 Wi-Fi 名称
-
-修改：
-
-```text
-files/etc/uci-defaults/01-enable-wifi
-```
-
-找到：
-
-```sh
-OpenWrt_2G
-OpenWrt_5G
-```
-
-替换为你自己的 SSID。
-
-### 修改 Netdata 客户端监控参数
-
-修改：
-
-```text
-files/etc/config/netdata_clients
-```
-
-常用配置：
-
-```text
-option lan_dev 'br-lan'
-option update_every '3'
-option rescan_every '60'
-option max_clients '64'
-```
-
-如果你的 LAN 接口不是 `br-lan`，请修改 `lan_dev`。
-
-### 是否默认开启网络加速
-
-修改：
-
-```text
-files/etc/uci-defaults/10-network-accel-defaults
-```
-
-例如想默认开启软件 flow offloading，可以把：
-
-```sh
-uci -q set firewall.@defaults[0].flow_offloading='0'
-```
-
-改为：
-
-```sh
-uci -q set firewall.@defaults[0].flow_offloading='1'
-```
-
-请注意，开启硬件加速、WED、SFE 等功能可能影响某些监控、限速或排障结果。
-
 ## 诊断与排错
-
-### 构建失败
-
-优先下载诊断 artifact：
-
-```text
-OpenWrt_Netdata_EQOS_Diagnostics_<run_number>
-```
-
-重点查看：
-
-```text
-logs/04_diy_part1.log
-logs/05_feeds_update.log
-logs/06_feeds_install.log
-logs/07a_diy_part2.log
-logs/07b_diy_part3_overlay.log
-logs/07c_defconfig.log
-logs/08_download.log
-logs/09_compile_j4.log
-logs/09_compile_j1.log
-```
-
-如果 `-j4` 失败但 `-j1` 有更明确错误，以 `09_compile_j1.log` 为准。
 
 ### Netdata 没有客户端图表
 
-可检查：
+检查：
 
 ```sh
 uci show netdata_clients
-ls -l /usr/lib/netdata/plugins.d/openwrt_clients.plugin
+ls -l /usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+/etc/init.d/netdata restart
 logread | grep -i openwrt_clients
 nft list table inet openwrt_clients
 cat /tmp/dhcp.leases
 ip -4 neigh show dev br-lan
+ip -6 neigh show dev br-lan
 ```
 
 常见原因：
 
 - LAN 接口不是 `br-lan`；
-- 没有 DHCP lease；
-- 客户端只走 IPv6；
+- 没有 DHCP lease 或邻居表为空；
 - Netdata 插件没有执行权限；
-- nftables 表或 counter 没有成功创建。
+- nftables 表或 counter 没有成功创建；
+- IPv6 设备只有 link-local 地址，插件会跳过 `fe80::`。
 
-### EQOS Plus 设备选择异常
+### EQOS Plus 设备规则不完整
 
-检查补丁是否成功执行：
+检查：
 
-```text
-logs/07a_diy_part2.log
+```sh
+uci show eqosplus
+tc class show dev br-lan | grep 'class htb'
+tc class show dev br-lan_ifb | grep 'class htb'
+nft list table inet eqosplus 2>/dev/null | grep -E 'ether saddr|meta mark'
 ```
 
-如果上游 `luci-app-eqosplus` 页面结构变化，`patch-eqosplus-mac-ipv6.sh` 可能无法匹配并中止构建。这通常需要重新适配补丁。
+如果配置里有 `@device[10]` 以后设备，但运行中只生成到 `1:1090`，说明多位数设备编号补丁没有生效。当前仓库构建时会强制校验 `grep -oE '[0-9]+'`，防止这个问题回归。
+
+### EQOS Plus 延迟/丢包检查
+
+```sh
+ping -c 20 -W 1 223.5.5.5
+tc -s qdisc show dev br-lan_ifb
+tc -s class show dev br-lan_ifb | grep -E 'class htb|dropped|overlimits|backlog' -A2
+tc qdisc show dev br-lan | grep fq_codel
+tc qdisc show dev br-lan_ifb | grep fq_codel
+```
+
+判断：
+
+```text
+br-lan_ifb dropped 不快速增加 = 上传方向队列基本稳定
+backlog 长期为 0 或很低 = 队列未明显堆积
+fq_codel 出现在设备 class 下 = 低延迟 leaf qdisc 生效
+```
 
 ## 安全建议
 
@@ -525,6 +422,4 @@ logs/07a_diy_part2.log
 
 ## 许可证
 
-本仓库中的脚本和配置用于 OpenWrt 自动构建。OpenWrt 本体遵循其上游许可证；第三方包分别遵循其各自上游许可证。
-
-请在分发固件或二次修改时遵守 OpenWrt、LuCI 以及所有第三方软件包的许可证要求。
+本仓库中的脚本和配置用于 OpenWrt 自动构建。OpenWrt 本体遵循其上游许可证；第三方包分别遵循其各自上游许可证。请在分发固件或二次修改时遵守 OpenWrt、LuCI、Netdata 以及所有第三方软件包的许可证要求。
