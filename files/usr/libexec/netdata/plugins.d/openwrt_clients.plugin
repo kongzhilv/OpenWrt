@@ -1,6 +1,6 @@
 #!/bin/sh
-# Netdata external plugin: OpenWrt per-client IPv4 realtime traffic.
-# UI layout: one chart per client with Chinese labels.
+# Netdata external plugin: OpenWrt per-client IPv4/IPv6 realtime traffic.
+# UI layout: one chart per client with Chinese labels and IPv4/IPv6 dimensions.
 # Data source: nftables named counters in inet/openwrt_clients.
 
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -86,14 +86,6 @@ valid_ipv4() {
     return 0
 }
 
-sanitize_id() {
-    echo "$1" | sed 's/[^A-Za-z0-9_]/_/g; s/^_*//; s/_\{2,\}/_/g; s/^/client_/; s/_$//'
-}
-
-sanitize_label() {
-    echo "$1" | sed 's/[^A-Za-z0-9._-]/_/g; s/_\{2,\}/_/g; s/^_*//; s/_*$//' | cut -c1-48
-}
-
 init_nft() {
     nft add table inet "$TABLE" 2>/dev/null || true
     nft add chain inet "$TABLE" "$CHAIN" '{ type filter hook forward priority -250; policy accept; }' 2>/dev/null || true
@@ -104,27 +96,108 @@ discover_clients() {
 
     # DHCP lease format: expires mac ip hostname clientid.
     if [ -r /tmp/dhcp.leases ]; then
-        awk '{ if ($3 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) { h=$4; if (h=="" || h=="*") h="unknown"; print $3, $2, h } }' /tmp/dhcp.leases >> "$CLIENTS_RAW"
+        awk '
+            $3 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ {
+                h=$4
+                if (h=="" || h=="*") h="unknown"
+                print "4", $3, tolower($2), h
+            }
+        ' /tmp/dhcp.leases >> "$CLIENTS_RAW"
     fi
 
-    # Add currently visible IPv4 neighbors on LAN; DHCP names win during de-duplication.
+    # IPv4 neighbors supply clients that have no current DHCP lease.
     ip -4 neigh show dev "$LAN_DEV" 2>/dev/null | awk '
         $1 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ {
             mac="00:00:00:00:00:00"
             for (i=1; i<=NF; i++) if ($i=="lladdr" && (i+1)<=NF) mac=$(i+1)
-            print $1, mac, "unknown"
-        }' >> "$CLIENTS_RAW"
+            print "4", $1, tolower(mac), "unknown"
+        }
+    ' >> "$CLIENTS_RAW"
 
-    : > "$CLIENTS_NEW"
-    awk '!seen[$1]++ {print $1, $2, $3}' "$CLIENTS_RAW" | head -n "$MAX_CLIENTS" | while read -r ip mac host; do
-        [ -n "$ip" ] || continue
-        valid_ipv4 "$ip" || continue
-        [ -n "$host" ] || host="unknown"
-        dim="$(sanitize_id "$ip")"
-        label_host="$(sanitize_label "$host")"
-        [ -n "$label_host" ] || label_host="unknown"
-        printf '%s %s %s %s up_%s down_%s\n' "$ip" "$mac" "$label_host" "$dim" "$dim" "$dim" >> "$CLIENTS_NEW"
-    done
+    # IPv6 neighbors are grouped by MAC. Skip link-local, multicast and failed entries.
+    ip -6 neigh show dev "$LAN_DEV" 2>/dev/null | awk '
+        $1 !~ /^fe80:/ && $1 !~ /^ff/ && $1 != "::" {
+            ip=$1
+            mac=""
+            failed=0
+            for (i=1; i<=NF; i++) {
+                if ($i=="lladdr" && (i+1)<=NF) mac=$(i+1)
+                if ($i=="FAILED") failed=1
+            }
+            if (!failed && mac ~ /^[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]$/) {
+                print "6", ip, tolower(mac), "unknown"
+            }
+        }
+    ' >> "$CLIENTS_RAW"
+
+    awk '
+        function valid_mac(m) {
+            return (m ~ /^[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]:[0-9a-f][0-9a-f]$/ && m != "00:00:00:00:00:00")
+        }
+        function add(list, val) {
+            if (val == "") return list
+            if (list == "") return val
+            return list "," val
+        }
+        function safe_id(s) {
+            gsub(/[^A-Za-z0-9_]/, "_", s)
+            gsub(/^_+/, "", s)
+            gsub(/_+$/, "", s)
+            gsub(/_+/, "_", s)
+            if (s == "") s="unknown"
+            return "client_" s
+        }
+        function clean_host(h) {
+            if (h == "" || h == "*") h="unknown"
+            gsub(/[^A-Za-z0-9._-]/, "_", h)
+            gsub(/^_+/, "", h)
+            gsub(/_+$/, "", h)
+            if (h == "") h="unknown"
+            return h
+        }
+        {
+            fam=$1
+            ip=$2
+            mac=tolower($3)
+            host=clean_host($4)
+            key=valid_mac(mac) ? "mac_" mac : "ip_" ip
+            if (!(key in seen_key)) {
+                seen_key[key]=1
+                order[++n]=key
+                mac_by_key[key]=valid_mac(mac) ? mac : "00:00:00:00:00:00"
+                host_by_key[key]="unknown"
+                ip4_by_key[key]=""
+                ip6_by_key[key]=""
+            }
+            if (host != "unknown") host_by_key[key]=host
+            if (fam == "4" && !(key SUBSEP ip in seen4)) {
+                seen4[key SUBSEP ip]=1
+                ip4_by_key[key]=add(ip4_by_key[key], ip)
+            }
+            if (fam == "6" && !(key SUBSEP ip in seen6)) {
+                seen6[key SUBSEP ip]=1
+                ip6_by_key[key]=add(ip6_by_key[key], ip)
+            }
+        }
+        END {
+            count=0
+            for (i=1; i<=n && count<max; i++) {
+                key=order[i]
+                ip4=ip4_by_key[key]
+                ip6=ip6_by_key[key]
+                if (ip4 == "" && ip6 == "") continue
+                dim=safe_id(key)
+                host=host_by_key[key]
+                if (host == "") host="unknown"
+                mac=mac_by_key[key]
+                if (ip4 == "") ip4="-"
+                if (ip6 == "") ip6="-"
+                printf "%s %s %s %s %s up4_%s down4_%s up6_%s down6_%s\n", ip4, ip6, mac, host, dim, dim, dim, dim, dim
+                count++
+            }
+        }
+    ' max="$MAX_CLIENTS" "$CLIENTS_RAW" > "$CLIENTS_NEW"
+
     mv "$CLIENTS_NEW" "$CLIENTS"
 }
 
@@ -132,12 +205,34 @@ sync_nft_rules() {
     init_nft
     nft flush chain inet "$TABLE" "$CHAIN" 2>/dev/null || true
 
-    while read -r ip mac host dim up down; do
-        [ -n "$ip" ] || continue
-        nft add counter inet "$TABLE" "$up" 2>/dev/null || true
-        nft add counter inet "$TABLE" "$down" 2>/dev/null || true
-        nft add rule inet "$TABLE" "$CHAIN" ip saddr "$ip" counter name "$up" 2>/dev/null || true
-        nft add rule inet "$TABLE" "$CHAIN" ip daddr "$ip" counter name "$down" 2>/dev/null || true
+    while read -r ip4s ip6s mac host dim up4 down4 up6 down6; do
+        [ -n "$dim" ] || continue
+        nft add counter inet "$TABLE" "$up4" 2>/dev/null || true
+        nft add counter inet "$TABLE" "$down4" 2>/dev/null || true
+        nft add counter inet "$TABLE" "$up6" 2>/dev/null || true
+        nft add counter inet "$TABLE" "$down6" 2>/dev/null || true
+
+        if [ "$ip4s" != "-" ]; then
+            OLD_IFS="$IFS"
+            IFS=','
+            for ip4 in $ip4s; do
+                valid_ipv4 "$ip4" || continue
+                nft add rule inet "$TABLE" "$CHAIN" ip saddr "$ip4" counter name "$up4" 2>/dev/null || true
+                nft add rule inet "$TABLE" "$CHAIN" ip daddr "$ip4" counter name "$down4" 2>/dev/null || true
+            done
+            IFS="$OLD_IFS"
+        fi
+
+        if [ "$ip6s" != "-" ]; then
+            OLD_IFS="$IFS"
+            IFS=','
+            for ip6 in $ip6s; do
+                [ -n "$ip6" ] || continue
+                nft add rule inet "$TABLE" "$CHAIN" ip6 saddr "$ip6" counter name "$up6" 2>/dev/null || true
+                nft add rule inet "$TABLE" "$CHAIN" ip6 daddr "$ip6" counter name "$down6" 2>/dev/null || true
+            done
+            IFS="$OLD_IFS"
+        fi
     done < "$CLIENTS"
 }
 
@@ -147,14 +242,18 @@ emit_charts() {
     [ -s "$CLIENTS" ] || return 0
 
     prio=70000
-    while read -r ip mac host dim up down; do
-        [ -n "$ip" ] || continue
+    while read -r ip4s ip6s mac host dim up4 down4 up6 down6; do
+        [ -n "$dim" ] || continue
         chart="$CHART_NS.$dim"
-        title="客户端 ${host} (${ip})"
-        family="${host} ${ip}"
+        label="$ip4s"
+        [ "$label" = "-" ] && label="$mac"
+        title="客户端 ${host} (${label})"
+        family="${host} ${label}"
         echo "CHART $chart '' '$title' 'KB/s' '$family' $CHART_CONTEXT line $prio $UPDATE_EVERY"
-        echo "DIMENSION download '下载' incremental 1 1024"
-        echo "DIMENSION upload '上传' incremental 1 1024"
+        echo "DIMENSION download4 'IPv4下载' incremental 1 1024"
+        echo "DIMENSION upload4 'IPv4上传' incremental 1 1024"
+        echo "DIMENSION download6 'IPv6下载' incremental 1 1024"
+        echo "DIMENSION upload6 'IPv6上传' incremental 1 1024"
         prio=$((prio + 1))
     done < "$CLIENTS"
 }
@@ -181,14 +280,18 @@ emit_values() {
 
     parse_counters_once
 
-    while read -r ip mac host dim up down; do
-        [ -n "$ip" ] || continue
+    while read -r ip4s ip6s mac host dim up4 down4 up6 down6; do
+        [ -n "$dim" ] || continue
         chart="$CHART_NS.$dim"
-        down_val="$(counter_value "$down")"
-        up_val="$(counter_value "$up")"
+        down4_val="$(counter_value "$down4")"
+        up4_val="$(counter_value "$up4")"
+        down6_val="$(counter_value "$down6")"
+        up6_val="$(counter_value "$up6")"
         echo "BEGIN $chart"
-        echo "SET download = $down_val"
-        echo "SET upload = $up_val"
+        echo "SET download4 = $down4_val"
+        echo "SET upload4 = $up4_val"
+        echo "SET download6 = $down6_val"
+        echo "SET upload6 = $up6_val"
         echo "END"
     done < "$CLIENTS"
 }
