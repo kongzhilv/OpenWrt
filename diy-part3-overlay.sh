@@ -95,13 +95,19 @@ check_grep "1/3/5/10" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_grep "CHART_NS=\"openwrt_clients_zh\"" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_grep "CHART_CONTEXT=\"openwrt_clients_zh.client_rate\"" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_grep "title=\"客户端" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
-check_grep "DIMENSION download '下载'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
-check_grep "DIMENSION upload '上传'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "DIMENSION download4 'IPv4下载'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "DIMENSION upload4 'IPv4上传'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "DIMENSION download6 'IPv6下载'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "DIMENSION upload6 'IPv6上传'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "ip6 saddr" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_grep "ip6 daddr" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_grep 'TABLE="openwrt_clients"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_grep 'nft add table inet "\$TABLE"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_grep 'nft add chain inet "\$TABLE" "\$CHAIN"' files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_no_grep "DIMENSION download 'Download'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 check_no_grep "DIMENSION upload 'Upload'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_no_grep "DIMENSION download '下载'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
+check_no_grep "DIMENSION upload '上传'" files/usr/libexec/netdata/plugins.d/openwrt_clients.plugin
 
 if [ -f files/etc/config/eqosplus ]; then
   echo "ERROR: files/etc/config/eqosplus must not be embedded; it can carry real client limit rules"
